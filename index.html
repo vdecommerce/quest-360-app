@@ -1,49 +1,57 @@
 <!DOCTYPE html>
 <html>
   <head>
-    <title>Quest 360 Viewer</title>
+    <title>Mijn VR Buitenbioscoop</title>
     <link rel="icon" href="data:,">
-    
     <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
 
     <style>
       #splash {
-        position: absolute; 
-        z-index: 999; 
-        top: 0; left: 0; 
-        width: 100%; height: 100%; 
-        background: rgba(0,0,0,0.8); 
-        display: flex; 
-        justify-content: center; 
-        align-items: center;
+        position: absolute; z-index: 999; top: 0; left: 0; 
+        width: 100%; height: 100%; background: rgba(0,0,0,0.9); 
+        display: flex; flex-direction: column; justify-content: center; align-items: center; color: white; font-family: sans-serif;
       }
       #start-btn {
-        padding: 20px 40px;
-        font-size: 24px;
-        background: white;
-        border: none;
-        border-radius: 5px;
-        cursor: pointer;
-        font-family: sans-serif;
-        font-weight: bold;
+        padding: 20px 40px; font-size: 24px; background: #28a745; 
+        color: white; border: none; border-radius: 5px; cursor: pointer; margin-top: 20px;
       }
-      #start-btn:hover { background: #ddd; }
     </style>
 
     <script>
-      // Dit script wacht tot de pagina geladen is
       document.addEventListener('DOMContentLoaded', function() {
-        var startBtn = document.querySelector('#start-btn');
-        var splash = document.querySelector('#splash');
-        var soundEntity = document.querySelector('#ambient-sound');
+        const splash = document.querySelector('#splash');
+        const startBtn = document.querySelector('#start-btn');
+        const videoElement = document.querySelector('#bios-video');
+        const ambientSound = document.querySelector('#ambient-sound-entity'); // Het achtergrondgeluid
+        const playPauseBtnVR = document.querySelector('#vr-play-pause-btn');
+        
+        let isPlaying = false; // Video begint gepauzeerd
 
+        // --- STAP 1: De Start Knop (2D) ---
         startBtn.addEventListener('click', function() {
-          // 1. Verberg het startscherm
           splash.style.display = 'none';
-          
-          // 2. Start het geluid (nu mag het van de browser!)
-          // We vertellen de 'sound component' om te spelen
-          soundEntity.components.sound.playSound();
+
+          // A. Start direct het achtergrondgeluid (vogels/wind)
+          ambientSound.components.sound.playSound();
+
+          // B. Video klaarzetten (hackje voor browsers), maar direct weer pauzeren
+          videoElement.play().then(() => {
+             videoElement.pause();
+          });
+        });
+
+        // --- STAP 2: De VR Knop (Play/Pause voor de FILM) ---
+        playPauseBtnVR.addEventListener('click', function() {
+          if (isPlaying) {
+            videoElement.pause();
+            this.setAttribute('color', 'green'); 
+            this.setAttribute('text', 'value: START FILM');
+          } else {
+            videoElement.play();
+            this.setAttribute('color', 'red');
+            this.setAttribute('text', 'value: PAUSE FILM');
+          }
+          isPlaying = !isPlaying;
         });
       });
     </script>
@@ -51,29 +59,45 @@
   <body>
     
     <div id="splash">
-      <button id="start-btn">Start Experience</button>
+      <h1>VR Buitenbioscoop</h1>
+      <p>Zet je headset op en klik op start</p>
+      <button id="start-btn">Start Ervaring</button>
     </div>
 
     <a-scene>
       <a-assets>
         <img id="sky-texture" src="assets/foto.png">
-        <audio id="sound-src" src="assets/geluid.mp3"></audio>
+
+        <audio id="ambient-src" src="assets/geluid.mp3"></audio>
+
+        <video id="bios-video" src="assets/video.mp4" loop="true" preload="auto" playsinline webkit-playsinline></video>
       </a-assets>
 
       <a-sky src="#sky-texture" rotation="0 -90 0"></a-sky>
 
-      <a-sound id="ambient-sound" 
-               src="#sound-src" 
+      <a-sound id="ambient-sound-entity" 
+               src="#ambient-src" 
                autoplay="false" 
                loop="true" 
+               volume="0.3"
                position="0 2 0">
       </a-sound>
 
-      <a-entity oculus-touch-controls="hand: left"></a-entity>
-      <a-entity oculus-touch-controls="hand: right"></a-entity>
+      <a-video src="#bios-video" width="8" height="4.5" position="0 2.5 -5"></a-video>
+
+      <a-box id="vr-play-pause-btn" 
+             position="0 0 -4" 
+             depth="0.2" height="0.5" width="1.5" 
+             color="green"
+             class="clickable"
+             text="value: START FILM; align: center; color: white; zOffset: 0.11;">
+      </a-box>
+
+      <a-entity oculus-touch-controls="hand: left" laser-controls="hand: left" raycaster="objects: .clickable; far: 10"></a-entity>
+      <a-entity oculus-touch-controls="hand: right" laser-controls="hand: right" raycaster="objects: .clickable; far: 10"></a-entity>
       
-      <a-entity camera look-controls>
-        <a-cursor color="white" opacity="0.5" raycaster="objects: .clickable"></a-cursor>
+      <a-entity camera look-controls position="0 1.6 0">
+        <a-cursor color="yellow" scale="0.5 0.5 0.5" raycaster="objects: .clickable"></a-cursor>
       </a-entity>
 
     </a-scene>
