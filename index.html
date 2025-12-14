@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
   <head>
-    <title>Mijn VR Buitenbioscoop</title>
+    <title>VR Cinema - Glass Design</title>
     <link rel="icon" href="data:,">
     <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
 
@@ -12,46 +12,80 @@
         display: flex; flex-direction: column; justify-content: center; align-items: center; color: white; font-family: sans-serif;
       }
       #start-btn {
-        padding: 20px 40px; font-size: 24px; background: #28a745; 
-        color: white; border: none; border-radius: 5px; cursor: pointer; margin-top: 20px;
+        padding: 20px 40px; font-size: 24px; background: linear-gradient(45deg, #4facfe, #00f2fe);
+        color: white; border: none; border-radius: 50px; cursor: pointer; margin-top: 20px;
+        box-shadow: 0 4px 15px rgba(0,242,254, 0.4);
       }
     </style>
 
     <script>
+      // --- DE MOVE TOOL (Nu voor de hele container) ---
+      AFRAME.registerComponent('drag-handler', {
+        init: function () {
+          // We luisteren naar events op deze container (bubbling zorgt dat clicks op kinderen ook werken)
+          this.el.addEventListener('mousedown', this.onMouseDown.bind(this));
+          this.el.addEventListener('mouseup', this.onMouseUp.bind(this));
+          this.isDragging = false;
+        },
+        onMouseDown: function (evt) {
+          // Check of we de Play-knop raken, dan NIET slepen
+          if (evt.target.id === "play-button" || evt.target.parentNode.id === "play-button") return;
+
+          var controller = evt.detail.cursorEl;
+          if (controller) {
+             controller.object3D.attach(this.el.object3D);
+             this.isDragging = true;
+          }
+        },
+        onMouseUp: function (evt) {
+          if (this.isDragging) {
+             var scene = document.querySelector('a-scene');
+             scene.object3D.attach(this.el.object3D);
+             this.isDragging = false;
+          }
+        }
+      });
+
+      // --- DE LOGICA ---
       document.addEventListener('DOMContentLoaded', function() {
         const splash = document.querySelector('#splash');
         const startBtn = document.querySelector('#start-btn');
         const videoElement = document.querySelector('#bios-video');
-        const ambientSound = document.querySelector('#ambient-sound-entity'); // Het achtergrondgeluid
-        const playPauseBtnVR = document.querySelector('#vr-play-pause-btn');
+        const ambientSound = document.querySelector('#ambient-sound-entity');
+        const playButton = document.querySelector('#play-button');
+        const playIcon = document.querySelector('#play-icon');
         
-        let isPlaying = false; // Video begint gepauzeerd
+        let isPlaying = false;
 
-        // --- STAP 1: De Start Knop (2D) ---
         startBtn.addEventListener('click', function() {
           splash.style.display = 'none';
-
-          // A. Start direct het achtergrondgeluid (vogels/wind)
           ambientSound.components.sound.playSound();
-
-          // B. Video klaarzetten (hackje voor browsers), maar direct weer pauzeren
-          videoElement.play().then(() => {
-             videoElement.pause();
-          });
+          videoElement.play().then(() => { videoElement.pause(); });
         });
 
-        // --- STAP 2: De VR Knop (Play/Pause voor de FILM) ---
-        playPauseBtnVR.addEventListener('click', function() {
+        playButton.addEventListener('click', function() {
           if (isPlaying) {
             videoElement.pause();
-            this.setAttribute('color', 'green'); 
-            this.setAttribute('text', 'value: START FILM');
+            // Verander icoon naar PLAY (▶)
+            playIcon.setAttribute('text', 'value: \u25B6'); 
+            // Kleur terug naar wit glas
+            playButton.setAttribute('material', 'color: white; opacity: 0.2');
           } else {
             videoElement.play();
-            this.setAttribute('color', 'red');
-            this.setAttribute('text', 'value: PAUSE FILM');
+            // Verander icoon naar PAUSE (||)
+            playIcon.setAttribute('text', 'value: ||'); 
+            // Kleur naar actief blauw
+            playButton.setAttribute('material', 'color: #00f2fe; opacity: 0.6');
           }
           isPlaying = !isPlaying;
+        });
+
+        // Hover effectjes voor de knop
+        playButton.addEventListener('mouseenter', function() {
+          if(!isPlaying) this.setAttribute('material', 'opacity: 0.5');
+        });
+        playButton.addEventListener('mouseleave', function() {
+           if(!isPlaying) this.setAttribute('material', 'opacity: 0.2');
         });
       });
     </script>
@@ -59,45 +93,49 @@
   <body>
     
     <div id="splash">
-      <h1>VR Buitenbioscoop</h1>
-      <p>Zet je headset op en klik op start</p>
-      <button id="start-btn">Start Ervaring</button>
+      <h1>Cinema Glass</h1>
+      <p>Pak het scherm vast aan de randen. Klik op de knop om te spelen.</p>
+      <button id="start-btn">Enter VR</button>
     </div>
 
     <a-scene>
       <a-assets>
         <img id="sky-texture" src="assets/foto.png">
-
         <audio id="ambient-src" src="assets/geluid.mp3"></audio>
-
         <video id="bios-video" src="assets/video.mp4" loop="true" preload="auto" playsinline webkit-playsinline></video>
       </a-assets>
 
       <a-sky src="#sky-texture" rotation="0 -90 0"></a-sky>
+      <a-sound id="ambient-sound-entity" src="#ambient-src" autoplay="false" loop="true" volume="0.3" position="0 2 0"></a-sound>
 
-      <a-sound id="ambient-sound-entity" 
-               src="#ambient-src" 
-               autoplay="false" 
-               loop="true" 
-               volume="0.3"
-               position="0 2 0">
-      </a-sound>
+      <a-entity id="cinema-rig" position="0 2.5 -5" drag-handler>
+        
+        <a-video src="#bios-video" width="8" height="4.5" class="clickable"></a-video>
 
-      <a-video src="#bios-video" width="8" height="4.5" position="0 2.5 -5"></a-video>
+        <a-box position="0 -2.6 0.1" 
+               width="8" height="0.8" depth="0.05"
+               material="color: #ffffff; opacity: 0.15; transparent: true; metalness: 0.1; roughness: 0.2"
+               class="clickable"> </a-box>
 
-      <a-box id="vr-play-pause-btn" 
-             position="0 0 -4" 
-             depth="0.2" height="0.5" width="1.5" 
-             color="green"
-             class="clickable"
-             text="value: START FILM; align: center; color: white; zOffset: 0.11;">
-      </a-box>
+        <a-cylinder id="play-button"
+                    position="0 -2.6 0.15" 
+                    rotation="90 0 0"
+                    radius="0.3" height="0.05"
+                    material="color: white; opacity: 0.2; transparent: true"
+                    class="clickable">
+            
+            <a-entity id="play-icon"
+                      text="value: \u25B6; align: center; color: white; width: 4;"
+                      position="0 -0.06 0"
+                      rotation="-90 0 0">
+            </a-entity>
+        </a-cylinder>
 
-      <a-entity oculus-touch-controls="hand: left" laser-controls="hand: left" raycaster="objects: .clickable; far: 10"></a-entity>
-      <a-entity oculus-touch-controls="hand: right" laser-controls="hand: right" raycaster="objects: .clickable; far: 10"></a-entity>
+      </a-entity> <a-entity oculus-touch-controls="hand: left" laser-controls="hand: left" raycaster="objects: .clickable; far: 20"></a-entity>
+      <a-entity oculus-touch-controls="hand: right" laser-controls="hand: right" raycaster="objects: .clickable; far: 20"></a-entity>
       
       <a-entity camera look-controls position="0 1.6 0">
-        <a-cursor color="yellow" scale="0.5 0.5 0.5" raycaster="objects: .clickable"></a-cursor>
+         <a-cursor color="#00f2fe" raycaster="objects: .clickable"></a-cursor>
       </a-entity>
 
     </a-scene>
