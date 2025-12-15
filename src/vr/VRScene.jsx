@@ -4,7 +4,7 @@ import { useFrame, useThree } from '@react-three/fiber'
 import { useTexture } from '@react-three/drei'
 import { Root, Container, Text, Image, Video } from '@react-three/uikit'
 
-const UI_PIXEL_SIZE = 0.0013
+const UI_PIXEL_SIZE = 0.0016
 
 function useAssetList(pathname, ext) {
   const [items, setItems] = useState([])
@@ -86,6 +86,55 @@ function yawToFace(camera, worldPos) {
   const dx = camPos.x - worldPos.x
   const dz = camPos.z - worldPos.z
   return Math.atan2(dx, dz)
+}
+
+function UiButton({
+  label,
+  onClick,
+  variant = 'primary',
+  width,
+  height = 56
+}) {
+  const backgroundColor = variant === 'primary' ? '#ffffff' : '#000000'
+  const backgroundOpacity = variant === 'primary' ? 0.1 : 0.55
+  const textColor = variant === 'primary' ? '#EAF6FF' : '#FFFFFF'
+
+  return (
+    <Container
+      onClick={onClick}
+      width={width}
+      height={height}
+      backgroundColor={backgroundColor}
+      backgroundOpacity={backgroundOpacity}
+      borderRadius={999}
+      alignItems="center"
+      justifyContent="center"
+      paddingX={18}
+    >
+      <Text fontSize={20} color={textColor}>
+        {label}
+      </Text>
+    </Container>
+  )
+}
+
+function UiIconButton({ label, onClick, size = 40 }) {
+  return (
+    <Container
+      onClick={onClick}
+      width={size}
+      height={size}
+      alignItems="center"
+      justifyContent="center"
+      backgroundColor="#000000"
+      backgroundOpacity={0.55}
+      borderRadius={999}
+    >
+      <Text fontSize={18} color="#FFFFFF">
+        {label}
+      </Text>
+    </Container>
+  )
 }
 
 function Window({
@@ -174,20 +223,7 @@ function Window({
           <Text fontSize={24} color="#EAF6FF">
             {title}
           </Text>
-          <Container
-            onClick={onMinimize}
-            width={36}
-            height={36}
-            alignItems="center"
-            justifyContent="center"
-            backgroundColor="#000000"
-            backgroundOpacity={0.55}
-            borderRadius={999}
-          >
-            <Text fontSize={20} color="#FFFFFF">
-              X
-            </Text>
-          </Container>
+          <UiIconButton label="X" onClick={onMinimize} size={36} />
         </Container>
 
         {children}
@@ -253,8 +289,7 @@ export default function VRScene() {
       try {
         el.muted = true
         await el.play()
-        el.pause()
-        el.currentTime = 0
+        el.currentTime = 0.001
       } catch (e) {}
     }
     window.addEventListener('pointerdown', prime, { once: true })
@@ -268,6 +303,20 @@ export default function VRScene() {
     el.currentTime = 0
     setPlaying(false)
     setMuted(true)
+  }, [videoSrc])
+
+  useEffect(() => {
+    const el = videoRef.current?.element
+    if (!el) return
+    // Ensure the video texture has frames even before the user presses play.
+    ;(async () => {
+      try {
+        el.muted = true
+        setMuted(true)
+        await el.play()
+        setPlaying(true)
+      } catch (e) {}
+    })()
   }, [videoSrc])
 
   const togglePlay = useCallback(async () => {
@@ -285,6 +334,14 @@ export default function VRScene() {
       }
     } catch (e) {}
   }, [playing])
+
+  const toggleMute = useCallback(() => {
+    const videoEl = videoRef.current?.element
+    if (!videoEl) return
+    const next = !muted
+    setMuted(next)
+    videoEl.muted = next
+  }, [muted])
 
   const nextVideo = useCallback(() => {
     if (!videos.length) return
@@ -388,13 +445,18 @@ export default function VRScene() {
           onPointerCancel={dockUp}
         >
           <Container width="100%" height="100%" flexDirection="row" alignItems="center" justifyContent="space-between" gap={12} paddingX={16}>
-            <Container onClick={openVideo} width={240} height={70} backgroundColor="#ffffff" backgroundOpacity={0.10} borderRadius={999} alignItems="center" justifyContent="center">
-              <Text fontSize={20} color="#EAF6FF">Video Player</Text>
-            </Container>
-            <Container onClick={openGallery} width={240} height={70} backgroundColor="#ffffff" backgroundOpacity={0.10} borderRadius={999} alignItems="center" justifyContent="center">
-              <Text fontSize={20} color="#EAF6FF">360 Gallery</Text>
-            </Container>
-            <Container onClick={closeAll} width={180} height={70} backgroundColor="#ffffff" backgroundOpacity={0.06} borderRadius={999} alignItems="center" justifyContent="center">
+            <UiButton label="Video Player" onClick={openVideo} width={240} height={70} />
+            <UiButton label="360 Gallery" onClick={openGallery} width={240} height={70} />
+            <Container
+              onClick={closeAll}
+              width={180}
+              height={70}
+              backgroundColor="#ffffff"
+              backgroundOpacity={0.06}
+              borderRadius={999}
+              alignItems="center"
+              justifyContent="center"
+            >
               <Text fontSize={20} color="#A9D7FF">Close</Text>
             </Container>
           </Container>
@@ -410,6 +472,14 @@ export default function VRScene() {
         height={760}
       >
         <Container width="100%" gap={12}>
+          <Container width="100%" flexDirection="row" alignItems="center" justifyContent="space-between">
+            <Container width="70%" gap={4}>
+              <Text fontSize={18} color="#EAF6FF">{videoSrc.replace('/assets/', '')}</Text>
+              <Text fontSize={14} color="#A9D7FF">MP4 • Video</Text>
+            </Container>
+            <UiButton label="Library" onClick={openVideoLibrary} width={180} height={52} />
+          </Container>
+
           <Video
             ref={videoRef}
             src={videoSrc}
@@ -423,69 +493,10 @@ export default function VRScene() {
           />
 
           <Container width="100%" flexDirection="row" gap={10} alignItems="center" justifyContent="space-between">
-            <Container
-              onClick={togglePlay}
-              width={120}
-              height={44}
-              backgroundColor="#000000"
-              backgroundOpacity={0.55}
-              borderRadius={14}
-              alignItems="center"
-              justifyContent="center"
-            >
-              <Text fontSize={18} color="#fff">{playing ? 'Pause' : 'Play'}</Text>
-            </Container>
-            <Container
-              onClick={openVideoLibrary}
-              width={140}
-              height={44}
-              backgroundColor="#ffffff"
-              backgroundOpacity={0.08}
-              borderRadius={14}
-              alignItems="center"
-              justifyContent="center"
-            >
-              <Text fontSize={16} color="#EAF6FF">Library</Text>
-            </Container>
-            <Container flexDirection="row" gap={8} alignItems="center">
-              <Container
-                onClick={prevVideo}
-                width={44}
-                height={44}
-                backgroundColor="#000000"
-                backgroundOpacity={0.55}
-                borderRadius={999}
-                alignItems="center"
-                justifyContent="center"
-              >
-                <Text fontSize={18} color="#fff">{'<'}</Text>
-              </Container>
-              <Container
-                onClick={nextVideo}
-                width={44}
-                height={44}
-                backgroundColor="#000000"
-                backgroundOpacity={0.55}
-                borderRadius={999}
-                alignItems="center"
-                justifyContent="center"
-              >
-                <Text fontSize={18} color="#fff">{'>'}</Text>
-              </Container>
-              <Container
-                width={520}
-                height={44}
-                backgroundColor="#ffffff"
-                backgroundOpacity={0.08}
-                borderRadius={14}
-                paddingX={12}
-                alignItems="center"
-                justifyContent="center"
-              >
-                <Text fontSize={14} color="#A9D7FF">
-                  {videoSrc.replace('/assets/', '')}
-                </Text>
-              </Container>
+            <UiButton label={playing ? 'Pause' : 'Play'} onClick={togglePlay} variant="secondary" width={160} height={52} />
+            <UiButton label={muted ? 'Unmute' : 'Mute'} onClick={toggleMute} variant="secondary" width={180} height={52} />
+            <Container width="100%" height={52} backgroundColor="#ffffff" backgroundOpacity={0.06} borderRadius={16} paddingX={14} alignItems="center" justifyContent="center">
+              <Text fontSize={14} color="#A9D7FF">Tip: sleep de titelbalk om te verplaatsen</Text>
             </Container>
           </Container>
         </Container>
@@ -500,6 +511,16 @@ export default function VRScene() {
         height={760}
       >
         <Container width="100%" gap={12}>
+          <Container width="100%" flexDirection="row" alignItems="center" justifyContent="space-between">
+            <Container width="70%" gap={4}>
+              <Text fontSize={18} color="#EAF6FF">Select a video</Text>
+              <Text fontSize={14} color="#A9D7FF">Click a file to load it into the player</Text>
+            </Container>
+            <Container width="30%" alignItems="flex-end">
+              <Text fontSize={14} color="#A9D7FF">Page {videoSafePage + 1}/{videoMaxPage}</Text>
+            </Container>
+          </Container>
+
           <Container width="100%" gap={10}>
             {videoItems.map((p, i) => {
               const absoluteIndex = videoStart + i
@@ -534,39 +555,11 @@ export default function VRScene() {
           </Container>
 
           <Container width="100%" flexDirection="row" alignItems="center" justifyContent="space-between">
-            <Container flexDirection="row" gap={8} alignItems="center">
-              <Container
-                onClick={() => setVideoPage((p) => Math.max(0, p - 1))}
-                width={44}
-                height={44}
-                backgroundColor="#000000"
-                backgroundOpacity={0.55}
-                borderRadius={999}
-                alignItems="center"
-                justifyContent="center"
-              >
-                <Text fontSize={18} color="#fff">
-                  {'<'}
-                </Text>
-              </Container>
-              <Container
-                onClick={() => setVideoPage((p) => Math.min(videoMaxPage - 1, p + 1))}
-                width={44}
-                height={44}
-                backgroundColor="#000000"
-                backgroundOpacity={0.55}
-                borderRadius={999}
-                alignItems="center"
-                justifyContent="center"
-              >
-                <Text fontSize={18} color="#fff">
-                  {'>'}
-                </Text>
-              </Container>
-              <Text fontSize={14} color="#A9D7FF">
-                Page {videoSafePage + 1}/{videoMaxPage}
-              </Text>
+            <Container flexDirection="row" gap={10} alignItems="center">
+              <UiIconButton label="<" onClick={() => setVideoPage((p) => Math.max(0, p - 1))} size={44} />
+              <UiIconButton label=">" onClick={() => setVideoPage((p) => Math.min(videoMaxPage - 1, p + 1))} size={44} />
             </Container>
+            <Text fontSize={14} color="#A9D7FF">Page {videoSafePage + 1}/{videoMaxPage}</Text>
           </Container>
         </Container>
       </Window>
@@ -580,6 +573,16 @@ export default function VRScene() {
         height={760}
       >
         <Container width="100%" gap={12}>
+          <Container width="100%" flexDirection="row" alignItems="center" justifyContent="space-between">
+            <Container width="70%" gap={4}>
+              <Text fontSize={18} color="#EAF6FF">Select a 360 image</Text>
+              <Text fontSize={14} color="#A9D7FF">{src.replace('/assets/', '')}</Text>
+            </Container>
+            <Container width="30%" alignItems="flex-end">
+              <Text fontSize={14} color="#A9D7FF">Page {safePage + 1}/{maxPage}</Text>
+            </Container>
+          </Container>
+
           <Container width="100%" gap={10}>
             {pageItems.map((p, i) => {
               const selected = p === src
@@ -611,66 +614,11 @@ export default function VRScene() {
           </Container>
 
           <Container width="100%" flexDirection="row" alignItems="center" justifyContent="space-between">
-            <Container flexDirection="row" gap={8} alignItems="center">
-              <Container
-                onClick={() => setGalleryPage((p) => Math.max(0, p - 1))}
-                width={44}
-                height={44}
-                backgroundColor="#000000"
-                backgroundOpacity={0.55}
-                borderRadius={999}
-                alignItems="center"
-                justifyContent="center"
-              >
-                <Text fontSize={18} color="#fff">
-                  {'<'}
-                </Text>
-              </Container>
-              <Container
-                onClick={() => setGalleryPage((p) => Math.min(maxPage - 1, p + 1))}
-                width={44}
-                height={44}
-                backgroundColor="#000000"
-                backgroundOpacity={0.55}
-                borderRadius={999}
-                alignItems="center"
-                justifyContent="center"
-              >
-                <Text fontSize={18} color="#fff">
-                  {'>'}
-                </Text>
-              </Container>
-              <Text fontSize={14} color="#A9D7FF">
-                Page {safePage + 1}/{maxPage}
-              </Text>
+            <Container flexDirection="row" gap={10} alignItems="center">
+              <UiIconButton label="<" onClick={() => setGalleryPage((p) => Math.max(0, p - 1))} size={44} />
+              <UiIconButton label=">" onClick={() => setGalleryPage((p) => Math.min(maxPage - 1, p + 1))} size={44} />
             </Container>
-
-            <Container flexDirection="row" gap={8} alignItems="center">
-              <Container
-                onClick={prevPano}
-                width={44}
-                height={44}
-                backgroundColor="#000000"
-                backgroundOpacity={0.55}
-                borderRadius={999}
-                alignItems="center"
-                justifyContent="center"
-              >
-                <Text fontSize={18} color="#fff">{'⟲'}</Text>
-              </Container>
-              <Container
-                onClick={nextPano}
-                width={44}
-                height={44}
-                backgroundColor="#000000"
-                backgroundOpacity={0.55}
-                borderRadius={999}
-                alignItems="center"
-                justifyContent="center"
-              >
-                <Text fontSize={18} color="#fff">{'⟳'}</Text>
-              </Container>
-            </Container>
+            <Text fontSize={14} color="#A9D7FF">Page {safePage + 1}/{maxPage}</Text>
           </Container>
         </Container>
       </Window>
