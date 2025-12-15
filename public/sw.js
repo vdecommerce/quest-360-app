@@ -1,5 +1,5 @@
 /* PWA Service Worker (simple + safe defaults) */
-const CACHE_NAME = "cinema-glass-v2";
+const CACHE_NAME = "cinema-glass-v3";
 const CORE_ASSETS = [
   "./",
   "./index.html",
@@ -51,6 +51,9 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(request.url);
   const isSameOrigin = url.origin === self.location.origin;
+  const isHtml = isSameOrigin && (request.destination === "document" || url.pathname.endsWith(".html"));
+  const isJsCss =
+    isSameOrigin && (url.pathname.endsWith(".js") || url.pathname.endsWith(".css"));
   const isStatic =
     isSameOrigin &&
     (url.pathname.startsWith("/assets/") ||
@@ -64,8 +67,23 @@ self.addEventListener("fetch", (event) => {
       url.pathname.endsWith(".mp4") ||
       url.pathname.endsWith(".webmanifest"));
 
-  if (isStatic) {
-    // Cache-first for local static assets
+  if (isHtml) {
+    // Network-first for HTML to avoid stale index -> missing hashed bundle (blank screen).
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          if (response.status === 206) return response;
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+          return response;
+        })
+        .catch(() => caches.match("./index.html"))
+    );
+    return;
+  }
+
+  if (isStatic && !isJsCss) {
+    // Cache-first for local media/assets (except JS/CSS)
     event.respondWith(
       caches.match(request).then((cached) => {
         if (cached) return cached;
