@@ -67,6 +67,8 @@
         border: 1px solid rgba(255, 255, 255, 0.12);
         box-shadow: var(--shadow);
         backdrop-filter: blur(10px);
+        max-height: calc(100dvh - 2 * max(18px, env(safe-area-inset-top)));
+        overflow: auto;
       }
       #splash-card h1 {
         margin: 0 0 6px;
@@ -153,9 +155,9 @@
       #hud {
         position: fixed;
         z-index: 998;
-        left: max(12px, env(safe-area-inset-left));
-        right: max(12px, env(safe-area-inset-right));
-        bottom: max(12px, env(safe-area-inset-bottom));
+        left: max(14px, env(safe-area-inset-left));
+        right: max(14px, env(safe-area-inset-right));
+        bottom: max(14px, env(safe-area-inset-bottom));
         display: none;
         pointer-events: none;
       }
@@ -219,6 +221,47 @@
         font-size: 13px;
         line-height: 1.2;
       }
+
+      #hud[data-collapsed="true"] #hud-inner {
+        width: min(520px, 100%);
+        padding: 8px 8px;
+      }
+      #hud[data-collapsed="true"] #hud-row-move,
+      #hud[data-collapsed="true"] #hud-hint,
+      #hud[data-collapsed="true"] #hud-reset,
+      #hud[data-collapsed="true"] .hud-volume {
+        display: none !important;
+      }
+
+      @media (max-width: 480px) {
+        #splash-card {
+          padding: 16px 14px 12px;
+          border-radius: 16px;
+        }
+        #splash-card h1 { font-size: 24px; }
+        #tips { font-size: 13px; }
+        #start-btn,
+        #enter-vr-btn {
+          padding: 12px 14px;
+          font-size: 16px;
+          width: 100%;
+          justify-content: center;
+        }
+        .btn-row { gap: 8px; }
+
+        #hud-inner { padding: 8px 8px; border-radius: 14px; }
+        .hud-btn { padding: 9px 10px; border-radius: 11px; }
+        #volume { width: min(46vw, 160px); }
+
+        #hud-row-main { justify-content: center; }
+        #hud-row-move .hud-btn { flex: 1 1 calc(33.333% - 8px); }
+      }
+
+      @media (max-width: 480px) and (orientation: landscape) {
+        #hud { left: max(10px, env(safe-area-inset-left)); right: max(10px, env(safe-area-inset-right)); bottom: max(10px, env(safe-area-inset-bottom)); }
+        #hud-row-move .hud-btn { flex: 1 1 calc(16.666% - 8px); }
+        #hud-hint { display: none; }
+      }
     </style>
 
     <script>
@@ -227,6 +270,22 @@
           this.el.addEventListener("mousedown", this.onMouseDown.bind(this));
           this.el.addEventListener("mouseup", this.onMouseUp.bind(this));
           this.isDragging = false;
+          this.cursorEl = null;
+          this.grabTargetEl = null;
+          this.offset = new THREE.Vector3();
+        },
+        tick: function () {
+          if (!this.isDragging || !this.cursorEl || !this.grabTargetEl) return;
+          const rc = this.cursorEl.components && this.cursorEl.components.raycaster;
+          if (!rc) return;
+          const hit = rc.getIntersection(this.grabTargetEl);
+          if (!hit || !hit.point) return;
+
+          const target = hit.point.clone().add(this.offset);
+          this.el.object3D.position.copy(target);
+
+          const rot = this.el.getAttribute("rotation") || { x: 0, y: 0, z: 0 };
+          this.el.setAttribute("rotation", `0 ${rot.y || 0} 0`);
         },
         onMouseDown: function (evt) {
           if (
@@ -235,18 +294,26 @@
           )
             return;
 
-          var controller = evt.detail?.cursorEl;
-          if (controller) {
-            controller.object3D.attach(this.el.object3D);
-            this.isDragging = true;
-          }
+          const cursorEl = evt.detail?.cursorEl;
+          const intersectionPoint = evt.detail?.intersection?.point;
+
+          if (!cursorEl || !intersectionPoint) return;
+
+          this.cursorEl = cursorEl;
+          this.grabTargetEl = evt.target;
+          this.offset.copy(this.el.object3D.position).sub(intersectionPoint);
+
+          const rot = this.el.getAttribute("rotation") || { x: 0, y: 0, z: 0 };
+          this.el.setAttribute("rotation", `0 ${rot.y || 0} 0`);
+          this.isDragging = true;
         },
         onMouseUp: function () {
-          if (this.isDragging) {
-            var scene = document.querySelector("a-scene");
-            scene.object3D.attach(this.el.object3D);
-            this.isDragging = false;
-          }
+          this.isDragging = false;
+          this.cursorEl = null;
+          this.grabTargetEl = null;
+
+          const rot = this.el.getAttribute("rotation") || { x: 0, y: 0, z: 0 };
+          this.el.setAttribute("rotation", `0 ${rot.y || 0} 0`);
         },
       });
 
@@ -272,9 +339,17 @@
         const moveRight = document.querySelector("#move-right");
         const moveUp = document.querySelector("#move-up");
         const moveDown = document.querySelector("#move-down");
+        const hudToggle = document.querySelector("#hud-toggle");
 
         let isPlaying = false;
         const defaultRig = { x: 0, y: 2.5, z: -5 };
+        const defaultYaw = 0;
+
+        function straightenRig(keepYaw = true) {
+          const rot = rig.getAttribute("rotation") || { x: 0, y: 0, z: 0 };
+          const yaw = keepYaw ? (rot.y || 0) : defaultYaw;
+          rig.setAttribute("rotation", `0 ${yaw} 0`);
+        }
 
         function showHud(shouldShow) {
           if (!hud) return;
@@ -288,6 +363,7 @@
             z: Math.max(-14, Math.min(-1.5, z)),
           };
           rig.setAttribute("position", `${clamped.x} ${clamped.y} ${clamped.z}`);
+          straightenRig(true);
         }
 
         function nudgeRig(dx, dy, dz) {
@@ -369,6 +445,7 @@
         if (hudReset)
           hudReset.addEventListener("click", function () {
             setRigPosition(defaultRig.x, defaultRig.y, defaultRig.z);
+            straightenRig(false);
           });
         if (volume) {
           volume.addEventListener("input", function () {
@@ -384,6 +461,22 @@
         if (moveRight) moveRight.addEventListener("click", () => nudgeRig(step, 0, 0));
         if (moveUp) moveUp.addEventListener("click", () => nudgeRig(0, step, 0));
         if (moveDown) moveDown.addEventListener("click", () => nudgeRig(0, -step, 0));
+
+        function setHudCollapsed(collapsed) {
+          if (!hud) return;
+          hud.dataset.collapsed = collapsed ? "true" : "false";
+          if (hudToggle) hudToggle.textContent = collapsed ? "Toon meer" : "Minimaliseer";
+          try {
+            localStorage.setItem("hudCollapsed", collapsed ? "1" : "0");
+          } catch (_) {}
+        }
+
+        if (hudToggle) {
+          hudToggle.addEventListener("click", function () {
+            const collapsed = hud?.dataset?.collapsed === "true";
+            setHudCollapsed(!collapsed);
+          });
+        }
 
         playButton.addEventListener("mouseenter", function () {
           if (!isPlaying) this.setAttribute("material", "opacity: 0.5");
@@ -402,8 +495,14 @@
               togglePlayback();
               return;
             }
+            if (key === "h") {
+              const collapsed = hud?.dataset?.collapsed === "true";
+              setHudCollapsed(!collapsed);
+              return;
+            }
             if (key === "r") {
               setRigPosition(defaultRig.x, defaultRig.y, defaultRig.z);
+              straightenRig(false);
               return;
             }
             const moveBoost = e.shiftKey ? 0.65 : step;
@@ -443,6 +542,20 @@
 
         initVrButton();
         updateUiFromPlayback();
+
+        try {
+          const saved = localStorage.getItem("hudCollapsed");
+          if (saved === null) {
+            const isMobileSized =
+              window.matchMedia &&
+              (window.matchMedia("(max-width: 480px)").matches ||
+                window.matchMedia("(pointer: coarse)").matches);
+            setHudCollapsed(Boolean(isMobileSized));
+          } else {
+            setHudCollapsed(saved === "1");
+          }
+        } catch (_) {}
+        straightenRig(false);
       });
     </script>
   </head>
@@ -467,12 +580,13 @@
 
     <div id="hud" aria-label="Bediening">
       <div id="hud-inner">
-        <div id="hud-row">
+        <div id="hud-row-main">
           <div class="hud-group">
             <button id="hud-play" class="hud-btn primary" type="button">Afspelen</button>
             <button id="hud-reset" class="hud-btn" type="button">Reset positie</button>
+            <button id="hud-toggle" class="hud-btn" type="button">Minimaliseer</button>
           </div>
-          <div class="hud-group">
+          <div class="hud-group hud-volume">
             <span class="hud-label">Volume</span>
             <input
               id="volume"
@@ -485,7 +599,7 @@
             >
           </div>
         </div>
-        <div id="hud-row">
+        <div id="hud-row-move">
           <div class="hud-group">
             <button id="move-left" class="hud-btn" type="button">Links</button>
             <button id="move-right" class="hud-btn" type="button">Rechts</button>
