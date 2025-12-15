@@ -4,6 +4,8 @@ import { useFrame, useThree } from '@react-three/fiber'
 import { useTexture } from '@react-three/drei'
 import { Root, Container, Text, Image, Video } from '@react-three/uikit'
 
+const UI_PIXEL_SIZE = 0.0006
+
 function usePanoList() {
   const [items, setItems] = useState([])
 
@@ -73,7 +75,7 @@ function Window({ visible, initialPosition, title, onMinimize, children, width =
   return (
     <group position={initialPosition}>
       <Root
-        pixelSize={0.0015}
+        pixelSize={UI_PIXEL_SIZE}
         width={width}
         height={height}
         backgroundColor="#0b1620"
@@ -186,7 +188,7 @@ export default function VRScene() {
 
       <FollowCameraGroup>
         <Root
-          pixelSize={0.0015}
+          pixelSize={UI_PIXEL_SIZE}
           width={620}
           height={130}
           backgroundColor="#0b1620"
@@ -206,7 +208,7 @@ export default function VRScene() {
               justifyContent="center"
             >
               <Text fontSize={20} color="#fff">
-                ≡
+                M
               </Text>
             </Container>
             <Container
@@ -220,7 +222,7 @@ export default function VRScene() {
               justifyContent="center"
             >
               <Text fontSize={18} color="#fff">
-                ▶
+                V
               </Text>
             </Container>
             <Container
@@ -369,7 +371,8 @@ export default function VRScene() {
                   onClick={() => setPanoIndex(absoluteIndex)}
                   width={170}
                   height={96}
-                  backgroundColor={selected ? 'rgba(0,242,254,0.22)' : 'rgba(255,255,255,0.06)'}
+                  backgroundColor={selected ? '#00f2fe' : '#ffffff'}
+                  backgroundOpacity={selected ? 0.22 : 0.06}
                   borderRadius={14}
                   padding={6}
                 >
