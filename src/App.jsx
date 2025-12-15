@@ -1,13 +1,10 @@
 import React, { useCallback, useMemo, useState } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { Environment, Loader, OrbitControls } from '@react-three/drei'
-import { DefaultXRController, DefaultXRHand, XR, XROrigin, createXRStore } from '@react-three/xr'
+import { XR, XROrigin, createXRStore } from '@react-three/xr'
 import VRScene from './vr/VRScene.jsx'
 
-const store = createXRStore({
-  hand: { enabled: true },
-  controller: { enabled: true }
-})
+const store = createXRStore()
 
 export default function App() {
   const [entered, setEntered] = useState(false)
@@ -66,10 +63,8 @@ export default function App() {
         <color attach="background" args={['#000']} />
         <XR store={store}>
           <XROrigin>
-            <DefaultXRController />
-            <DefaultXRHand />
+            <VRScene />
           </XROrigin>
-          <VRScene />
         </XR>
 
         {!entered && (
