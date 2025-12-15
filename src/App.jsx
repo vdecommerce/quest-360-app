@@ -1,10 +1,12 @@
-import React, { useCallback, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { Environment, Loader, OrbitControls } from '@react-three/drei'
 import { XR, XROrigin, createXRStore } from '@react-three/xr'
 import VRScene from './vr/VRScene.jsx'
 
 const store = createXRStore({
+  offerSession: false,
+  emulate: false,
   // Keep session init minimal for immersive-vr on Quest (avoid unsupported feature requests).
   anchors: false,
   bodyTracking: false,
@@ -20,13 +22,33 @@ const store = createXRStore({
 
 export default function App() {
   const [entered, setEntered] = useState(false)
+  const [xrSupported, setXrSupported] = useState(false)
+
+  useEffect(() => {
+    let canceled = false
+    ;(async () => {
+      try {
+        const supported =
+          typeof navigator !== 'undefined' &&
+          navigator.xr &&
+          (await navigator.xr.isSessionSupported('immersive-vr'))
+        if (!canceled) setXrSupported(!!supported)
+      } catch (e) {
+        if (!canceled) setXrSupported(false)
+      }
+    })()
+    return () => {
+      canceled = true
+    }
+  }, [])
 
   const onEnter = useCallback(async () => {
     setEntered(true)
+    if (!xrSupported) return
     try {
       await store.enterVR()
     } catch (e) {}
-  }, [])
+  }, [xrSupported])
 
   const overlayStyle = useMemo(
     () => ({
@@ -63,14 +85,19 @@ export default function App() {
       <div style={overlayStyle}>
         <h1 style={{ margin: 0 }}>Cinema Glass</h1>
         <p style={{ margin: 0, opacity: 0.85 }}>
-          Open het menu via A/B/X/Y of de dock. Kies Video Player of 360 Gallery.
+          {xrSupported
+            ? 'Open het menu via A/B/X/Y of de dock. Kies Video Player of 360 Gallery.'
+            : 'WebXR (immersive-vr) is niet beschikbaar op deze browser. Desktop preview is actief.'}
         </p>
-        <button style={buttonStyle} onClick={onEnter}>Enter VR</button>
+        <button style={buttonStyle} onClick={onEnter}>
+          {xrSupported ? 'Enter VR' : 'Start'}
+        </button>
       </div>
 
       <Canvas
         gl={{ antialias: true }}
         camera={{ position: [0, 1.6, 0], fov: 60 }}
+        style={{ position: 'fixed', inset: 0 }}
       >
         <color attach="background" args={['#000']} />
         <XR store={store}>
