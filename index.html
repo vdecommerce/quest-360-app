@@ -3,7 +3,10 @@
   <head>
     <title>VR Cinema - Glass Design</title>
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <link rel="icon" href="data:,">
+    <meta name="theme-color" content="#00f2fe">
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="icon" href="assets/pwa-icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="assets/pwa-icon.svg">
     <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
 
     <style>
@@ -265,27 +268,47 @@
     </style>
 
     <script>
+      AFRAME.registerComponent("face-viewer", {
+        init: function () {
+          this._tmpTargetWorldQ = new THREE.Quaternion();
+          this._tmpParentWorldQ = new THREE.Quaternion();
+          this._tmpLocalQ = new THREE.Quaternion();
+          this._tmpCamPos = new THREE.Vector3();
+          this._tmpElPos = new THREE.Vector3();
+          this._tmpEuler = new THREE.Euler();
+        },
+        tick: function () {
+          const sceneEl = this.el.sceneEl;
+          const cameraObj =
+            sceneEl?.camera?.el?.object3D ||
+            sceneEl?.querySelector?.("[camera]")?.object3D;
+          const parentObj = this.el.object3D.parent;
+          if (!cameraObj || !parentObj) return;
+
+          cameraObj.getWorldPosition(this._tmpCamPos);
+          this.el.object3D.getWorldPosition(this._tmpElPos);
+
+          const dx = this._tmpCamPos.x - this._tmpElPos.x;
+          const dz = this._tmpCamPos.z - this._tmpElPos.z;
+          const yawRad = Math.atan2(dx, dz);
+
+          this._tmpTargetWorldQ.setFromEuler(
+            this._tmpEuler.set(0, yawRad, 0, "YXZ")
+          );
+          parentObj.getWorldQuaternion(this._tmpParentWorldQ);
+          this._tmpLocalQ
+            .copy(this._tmpParentWorldQ)
+            .invert()
+            .multiply(this._tmpTargetWorldQ);
+          this.el.object3D.quaternion.copy(this._tmpLocalQ);
+        },
+      });
+
       AFRAME.registerComponent("drag-handler", {
         init: function () {
           this.el.addEventListener("mousedown", this.onMouseDown.bind(this));
           this.el.addEventListener("mouseup", this.onMouseUp.bind(this));
           this.isDragging = false;
-          this.cursorEl = null;
-          this.grabTargetEl = null;
-          this.offset = new THREE.Vector3();
-        },
-        tick: function () {
-          if (!this.isDragging || !this.cursorEl || !this.grabTargetEl) return;
-          const rc = this.cursorEl.components && this.cursorEl.components.raycaster;
-          if (!rc) return;
-          const hit = rc.getIntersection(this.grabTargetEl);
-          if (!hit || !hit.point) return;
-
-          const target = hit.point.clone().add(this.offset);
-          this.el.object3D.position.copy(target);
-
-          const rot = this.el.getAttribute("rotation") || { x: 0, y: 0, z: 0 };
-          this.el.setAttribute("rotation", `0 ${rot.y || 0} 0`);
         },
         onMouseDown: function (evt) {
           if (
@@ -295,25 +318,20 @@
             return;
 
           const cursorEl = evt.detail?.cursorEl;
-          const intersectionPoint = evt.detail?.intersection?.point;
+          if (!cursorEl || !cursorEl.object3D) return;
 
-          if (!cursorEl || !intersectionPoint) return;
-
-          this.cursorEl = cursorEl;
-          this.grabTargetEl = evt.target;
-          this.offset.copy(this.el.object3D.position).sub(intersectionPoint);
-
-          const rot = this.el.getAttribute("rotation") || { x: 0, y: 0, z: 0 };
-          this.el.setAttribute("rotation", `0 ${rot.y || 0} 0`);
+          cursorEl.object3D.attach(this.el.object3D);
           this.isDragging = true;
         },
         onMouseUp: function () {
-          this.isDragging = false;
-          this.cursorEl = null;
-          this.grabTargetEl = null;
+          if (!this.isDragging) return;
 
-          const rot = this.el.getAttribute("rotation") || { x: 0, y: 0, z: 0 };
-          this.el.setAttribute("rotation", `0 ${rot.y || 0} 0`);
+          const scene = document.querySelector("a-scene");
+          if (scene && scene.object3D) {
+            scene.object3D.attach(this.el.object3D);
+          }
+
+          this.isDragging = false;
         },
       });
 
@@ -556,6 +574,12 @@
           }
         } catch (_) {}
         straightenRig(false);
+
+        if ("serviceWorker" in navigator) {
+          window.addEventListener("load", () => {
+            navigator.serviceWorker.register("./sw.js").catch(() => {});
+          });
+        }
       });
     </script>
   </head>
@@ -639,7 +663,7 @@
         position="0 2 0"
       ></a-sound>
 
-      <a-entity id="cinema-rig" position="0 2.5 -5" drag-handler>
+      <a-entity id="cinema-rig" position="0 2.5 -5" drag-handler face-viewer>
         <a-video id="screen" src="#bios-video" width="8" height="4.5" class="clickable"></a-video>
 
         <a-box
