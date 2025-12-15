@@ -38,6 +38,8 @@ function isCacheableRequest(request) {
 self.addEventListener("fetch", (event) => {
   const request = event.request;
   if (!isCacheableRequest(request)) return;
+  // Range requests (e.g. video streaming) return 206 Partial Content, which Cache API can't store.
+  if (request.headers.has("range")) return;
 
   // SPA-style nav fallback to cached index
   if (request.mode === "navigate") {
@@ -68,6 +70,7 @@ self.addEventListener("fetch", (event) => {
       caches.match(request).then((cached) => {
         if (cached) return cached;
         return fetch(request).then((response) => {
+          if (response.status === 206) return response;
           const copy = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
           return response;
@@ -82,6 +85,7 @@ self.addEventListener("fetch", (event) => {
     caches.match(request).then((cached) => {
       const fetchPromise = fetch(request)
         .then((response) => {
+          if (response.status === 206) return response;
           const copy = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
           return response;

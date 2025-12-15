@@ -4,7 +4,19 @@ import { Environment, Loader, OrbitControls } from '@react-three/drei'
 import { XR, XROrigin, createXRStore } from '@react-three/xr'
 import VRScene from './vr/VRScene.jsx'
 
-const store = createXRStore()
+const store = createXRStore({
+  // Keep session init minimal for immersive-vr on Quest (avoid unsupported feature requests).
+  anchors: false,
+  bodyTracking: false,
+  depthSensing: false,
+  domOverlay: false,
+  hitTest: false,
+  layers: false,
+  meshDetection: false,
+  planeDetection: false,
+  // Hand tracking is nice-to-have; keep it enabled.
+  handTracking: true
+})
 
 export default function App() {
   const [entered, setEntered] = useState(false)

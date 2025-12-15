@@ -76,7 +76,8 @@ function Window({ visible, initialPosition, title, onMinimize, children, width =
         pixelSize={0.0015}
         width={width}
         height={height}
-        backgroundColor="rgba(11,22,32,0.72)"
+        backgroundColor="#0b1620"
+        backgroundOpacity={0.72}
         borderRadius={18}
         padding={18}
         gap={14}
@@ -87,7 +88,8 @@ function Window({ visible, initialPosition, title, onMinimize, children, width =
           flexDirection="row"
           alignItems="center"
           justifyContent="space-between"
-          backgroundColor="rgba(0,0,0,0.35)"
+          backgroundColor="#000000"
+          backgroundOpacity={0.35}
           borderRadius={14}
           paddingX={16}
         >
@@ -100,7 +102,8 @@ function Window({ visible, initialPosition, title, onMinimize, children, width =
             height={36}
             alignItems="center"
             justifyContent="center"
-            backgroundColor="rgba(0,0,0,0.55)"
+            backgroundColor="#000000"
+            backgroundOpacity={0.55}
             borderRadius={999}
           >
             <Text fontSize={20} color="#FFFFFF">
@@ -182,19 +185,54 @@ export default function VRScene() {
       </Suspense>
 
       <FollowCameraGroup>
-        <Root pixelSize={0.0015} width={0.62} height={0.13} backgroundColor="rgba(11,22,32,0.72)" borderRadius={999} padding={10}>
+        <Root
+          pixelSize={0.0015}
+          width={0.62}
+          height={0.13}
+          backgroundColor="#0b1620"
+          backgroundOpacity={0.72}
+          borderRadius={999}
+          padding={10}
+        >
           <Container width="100%" height="100%" flexDirection="row" alignItems="center" justifyContent="space-between" gap={10} paddingX={10}>
-            <Container onClick={() => setMenuOpen((v) => !v)} width={44} height={44} backgroundColor="rgba(0,0,0,0.55)" borderRadius={999} alignItems="center" justifyContent="center">
+            <Container
+              onClick={() => setMenuOpen((v) => !v)}
+              width={44}
+              height={44}
+              backgroundColor="#000000"
+              backgroundOpacity={0.55}
+              borderRadius={999}
+              alignItems="center"
+              justifyContent="center"
+            >
               <Text fontSize={20} color="#fff">
                 ≡
               </Text>
             </Container>
-            <Container onClick={openVideo} width={44} height={44} backgroundColor="rgba(0,0,0,0.55)" borderRadius={999} alignItems="center" justifyContent="center">
+            <Container
+              onClick={openVideo}
+              width={44}
+              height={44}
+              backgroundColor="#000000"
+              backgroundOpacity={0.55}
+              borderRadius={999}
+              alignItems="center"
+              justifyContent="center"
+            >
               <Text fontSize={18} color="#fff">
                 ▶
               </Text>
             </Container>
-            <Container onClick={openGallery} width={44} height={44} backgroundColor="rgba(0,0,0,0.55)" borderRadius={999} alignItems="center" justifyContent="center">
+            <Container
+              onClick={openGallery}
+              width={44}
+              height={44}
+              backgroundColor="#000000"
+              backgroundOpacity={0.55}
+              borderRadius={999}
+              alignItems="center"
+              justifyContent="center"
+            >
               <Text fontSize={14} color="#fff">
                 360
               </Text>
@@ -212,13 +250,43 @@ export default function VRScene() {
         height={0.62}
       >
         <Container width="100%" gap={10}>
-          <Container onClick={openVideo} width="100%" height={56} backgroundColor="rgba(255,255,255,0.10)" borderRadius={14} paddingX={16} alignItems="center" justifyContent="center">
+          <Container
+            onClick={openVideo}
+            width="100%"
+            height={56}
+            backgroundColor="#ffffff"
+            backgroundOpacity={0.1}
+            borderRadius={14}
+            paddingX={16}
+            alignItems="center"
+            justifyContent="center"
+          >
             <Text fontSize={18} color="#EAF6FF">Video Player</Text>
           </Container>
-          <Container onClick={openGallery} width="100%" height={56} backgroundColor="rgba(255,255,255,0.10)" borderRadius={14} paddingX={16} alignItems="center" justifyContent="center">
+          <Container
+            onClick={openGallery}
+            width="100%"
+            height={56}
+            backgroundColor="#ffffff"
+            backgroundOpacity={0.1}
+            borderRadius={14}
+            paddingX={16}
+            alignItems="center"
+            justifyContent="center"
+          >
             <Text fontSize={18} color="#EAF6FF">360 Gallery</Text>
           </Container>
-          <Container onClick={() => setMenuOpen(false)} width="100%" height={56} backgroundColor="rgba(255,255,255,0.06)" borderRadius={14} paddingX={16} alignItems="center" justifyContent="center">
+          <Container
+            onClick={() => setMenuOpen(false)}
+            width="100%"
+            height={56}
+            backgroundColor="#ffffff"
+            backgroundOpacity={0.06}
+            borderRadius={14}
+            paddingX={16}
+            alignItems="center"
+            justifyContent="center"
+          >
             <Text fontSize={18} color="#A9D7FF">Close</Text>
           </Container>
         </Container>
@@ -246,10 +314,28 @@ export default function VRScene() {
           />
 
           <Container width="100%" flexDirection="row" gap={10} alignItems="center" justifyContent="space-between">
-            <Container onClick={togglePlay} width={120} height={44} backgroundColor="rgba(0,0,0,0.55)" borderRadius={14} alignItems="center" justifyContent="center">
+            <Container
+              onClick={togglePlay}
+              width={120}
+              height={44}
+              backgroundColor="#000000"
+              backgroundOpacity={0.55}
+              borderRadius={14}
+              alignItems="center"
+              justifyContent="center"
+            >
               <Text fontSize={18} color="#fff">{playing ? 'Pause' : 'Play'}</Text>
             </Container>
-            <Container width="100%" height={44} backgroundColor="rgba(255,255,255,0.08)" borderRadius={14} paddingX={12} alignItems="center" justifyContent="center">
+            <Container
+              width="100%"
+              height={44}
+              backgroundColor="#ffffff"
+              backgroundOpacity={0.08}
+              borderRadius={14}
+              paddingX={12}
+              alignItems="center"
+              justifyContent="center"
+            >
               <Text fontSize={14} color="#A9D7FF">
                 {src.replace('/assets/', '')}
               </Text>
@@ -299,7 +385,8 @@ export default function VRScene() {
                 onClick={() => setGalleryPage((p) => Math.max(0, p - 1))}
                 width={44}
                 height={44}
-                backgroundColor="rgba(0,0,0,0.55)"
+                backgroundColor="#000000"
+                backgroundOpacity={0.55}
                 borderRadius={999}
                 alignItems="center"
                 justifyContent="center"
@@ -312,7 +399,8 @@ export default function VRScene() {
                 onClick={() => setGalleryPage((p) => Math.min(maxPage - 1, p + 1))}
                 width={44}
                 height={44}
-                backgroundColor="rgba(0,0,0,0.55)"
+                backgroundColor="#000000"
+                backgroundOpacity={0.55}
                 borderRadius={999}
                 alignItems="center"
                 justifyContent="center"
@@ -327,10 +415,28 @@ export default function VRScene() {
             </Container>
 
             <Container flexDirection="row" gap={8} alignItems="center">
-              <Container onClick={prevPano} width={44} height={44} backgroundColor="rgba(0,0,0,0.55)" borderRadius={999} alignItems="center" justifyContent="center">
+              <Container
+                onClick={prevPano}
+                width={44}
+                height={44}
+                backgroundColor="#000000"
+                backgroundOpacity={0.55}
+                borderRadius={999}
+                alignItems="center"
+                justifyContent="center"
+              >
                 <Text fontSize={18} color="#fff">{'⟲'}</Text>
               </Container>
-              <Container onClick={nextPano} width={44} height={44} backgroundColor="rgba(0,0,0,0.55)" borderRadius={999} alignItems="center" justifyContent="center">
+              <Container
+                onClick={nextPano}
+                width={44}
+                height={44}
+                backgroundColor="#000000"
+                backgroundOpacity={0.55}
+                borderRadius={999}
+                alignItems="center"
+                justifyContent="center"
+              >
                 <Text fontSize={18} color="#fff">{'⟳'}</Text>
               </Container>
             </Container>
