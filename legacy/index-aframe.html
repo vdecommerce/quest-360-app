@@ -1,0 +1,888 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>VR Cinema - Glass Design</title>
+    <link rel="icon" href="data:,">
+    <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
+
+    <style>
+      body, html { margin: 0; padding: 0; font-family: sans-serif; width: 100%; height: 100%; overflow: hidden; }
+      #splash {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9);
+        display: flex; flex-direction: column; justify-content: center; align-items: center; color: white;
+        z-index: 1000;
+      }
+      #start-btn {
+        padding: 20px 40px; font-size: 24px; background: linear-gradient(45deg, #4facfe, #00f2fe);
+        color: white; border: none; border-radius: 50px; cursor: pointer; margin-top: 20px;
+        box-shadow: 0 4px 15px rgba(0,242,254, 0.4);
+      }
+    </style>
+
+    <script>
+      AFRAME.registerComponent('fit-video', {
+        schema: {
+          video: { type: 'selector' },
+          maxHeight: { type: 'number', default: 1.125 }
+        },
+        init: function () {
+          this.onMeta = this.onMeta.bind(this);
+          if (this.data.video) {
+            this.data.video.addEventListener('loadedmetadata', this.onMeta);
+          }
+          this.onMeta();
+        },
+        remove: function () {
+          if (this.data.video) {
+            this.data.video.removeEventListener('loadedmetadata', this.onMeta);
+          }
+        },
+        onMeta: function () {
+          const video = this.data.video;
+          if (!video || !video.videoWidth || !video.videoHeight) return;
+          const aspect = video.videoWidth / video.videoHeight;
+          const height = this.data.maxHeight;
+          const width = height * aspect;
+          this.el.setAttribute('height', height);
+          this.el.setAttribute('width', width);
+        }
+      });
+
+      AFRAME.registerComponent('movable-screen', {
+        schema: {
+          target: { type: 'selector' }
+        },
+        init: function () {
+          this.grabber = null;
+          this._grabberUpHandler = null;
+          this.offset = new THREE.Matrix4();
+          this._tmpMatrix = new THREE.Matrix4();
+          this._tmpPos = new THREE.Vector3();
+          this._tmpQuat = new THREE.Quaternion();
+          this._tmpScale = new THREE.Vector3();
+
+          this.onDown = (evt) => {
+            const cursorEl = evt.detail && evt.detail.cursorEl;
+            if (!cursorEl || !this.data.target) return;
+
+            if (this.grabber && this._grabberUpHandler) {
+              this.grabber.removeEventListener('mouseup', this._grabberUpHandler);
+            }
+            this.grabber = cursorEl;
+
+            const inv = new THREE.Matrix4().copy(this.grabber.object3D.matrixWorld).invert();
+            this.offset.copy(inv).multiply(this.data.target.object3D.matrixWorld);
+
+            this._grabberUpHandler = (upEvt) => {
+              const upCursor = upEvt.detail && upEvt.detail.cursorEl;
+              if (upCursor && upCursor !== this.grabber) return;
+              if (this.grabber && this._grabberUpHandler) {
+                this.grabber.removeEventListener('mouseup', this._grabberUpHandler);
+              }
+              this.grabber = null;
+              this._grabberUpHandler = null;
+            };
+            this.grabber.addEventListener('mouseup', this._grabberUpHandler);
+          };
+
+          this.onUp = (evt) => {
+            const cursorEl = evt.detail && evt.detail.cursorEl;
+            if (!cursorEl) return;
+            if (this.grabber !== cursorEl) return;
+            if (this.grabber && this._grabberUpHandler) {
+              this.grabber.removeEventListener('mouseup', this._grabberUpHandler);
+            }
+            this.grabber = null;
+            this._grabberUpHandler = null;
+          };
+
+          this.el.addEventListener('mousedown', this.onDown);
+          this.el.addEventListener('mouseup', this.onUp);
+        },
+        tick: function () {
+          if (!this.grabber || !this.data.target) return;
+          this._tmpMatrix.multiplyMatrices(this.grabber.object3D.matrixWorld, this.offset);
+          this._tmpMatrix.decompose(this._tmpPos, this._tmpQuat, this._tmpScale);
+          this.data.target.object3D.position.copy(this._tmpPos);
+          this.data.target.object3D.quaternion.copy(this._tmpQuat);
+          this.data.target.object3D.scale.copy(this._tmpScale);
+        }
+      });
+
+      AFRAME.registerComponent('video-controls', {
+        schema: {
+          video: { type: 'selector' },
+          ambient: { type: 'selector' },
+          splash: { type: 'selector' },
+          window: { type: 'selector' },
+          exitVrOnClose: { type: 'boolean', default: false },
+
+          playButton: { type: 'selector' },
+          playIcon: { type: 'selector' },
+          pauseIcon: { type: 'selector' },
+
+          progressHit: { type: 'selector' },
+          progressFill: { type: 'selector' },
+          progressWidth: { type: 'number', default: 1.55 },
+          progressX: { type: 'number', default: -0.1 },
+
+          volDown: { type: 'selector' },
+          volUp: { type: 'selector' },
+          closeButton: { type: 'selector' }
+        },
+        init: function () {
+          this.isPlaying = false;
+          this._lastUiUpdateMs = 0;
+
+          this.onToggle = () => this.togglePlay();
+          this.onSeek = (evt) => this.seek(evt);
+          this.onVolDown = () => {
+            if (!this.data.video) return;
+            this.setVolume(this.data.video.volume - 0.1);
+          };
+          this.onVolUp = () => {
+            if (!this.data.video) return;
+            this.setVolume(this.data.video.volume + 0.1);
+          };
+          this.onClose = () => this.close();
+
+          if (this.data.playButton) this.data.playButton.addEventListener('click', this.onToggle);
+          if (this.data.progressHit) this.data.progressHit.addEventListener('click', this.onSeek);
+          if (this.data.volDown) this.data.volDown.addEventListener('click', this.onVolDown);
+          if (this.data.volUp) this.data.volUp.addEventListener('click', this.onVolUp);
+          if (this.data.closeButton) this.data.closeButton.addEventListener('click', this.onClose);
+        },
+        remove: function () {
+          if (this.data.playButton) this.data.playButton.removeEventListener('click', this.onToggle);
+          if (this.data.progressHit) this.data.progressHit.removeEventListener('click', this.onSeek);
+          if (this.data.volDown) this.data.volDown.removeEventListener('click', this.onVolDown);
+          if (this.data.volUp) this.data.volUp.removeEventListener('click', this.onVolUp);
+          if (this.data.closeButton) this.data.closeButton.removeEventListener('click', this.onClose);
+        },
+        tick: function (t) {
+          if (!this.data.video || !this.data.progressFill) return;
+          if (t - this._lastUiUpdateMs < 80) return;
+          this._lastUiUpdateMs = t;
+
+          const video = this.data.video;
+          const duration = video.duration || 0;
+          if (!duration) return;
+          const p = Math.min(1, Math.max(0, video.currentTime / duration));
+
+          this.data.progressFill.object3D.scale.x = Math.max(0.0001, p);
+          this.data.progressFill.object3D.position.x =
+            this.data.progressX + (-this.data.progressWidth / 2) + (this.data.progressWidth * p) / 2;
+        },
+        togglePlay: function () {
+          const video = this.data.video;
+          if (!video) return;
+
+          if (this.isPlaying) {
+            video.pause();
+          } else {
+            video.muted = false;
+            void video.play();
+          }
+          this.isPlaying = !this.isPlaying;
+
+          if (this.data.playIcon) this.data.playIcon.setAttribute('visible', !this.isPlaying);
+          if (this.data.pauseIcon) this.data.pauseIcon.setAttribute('visible', this.isPlaying);
+        },
+        seek: function (evt) {
+          const video = this.data.video;
+          if (!video || !video.duration) return;
+          const intersection = evt.detail && evt.detail.intersection;
+          if (!intersection || !intersection.uv) return;
+          const x = Math.min(1, Math.max(0, intersection.uv.x));
+          video.currentTime = x * video.duration;
+        },
+        setVolume: function (value) {
+          const video = this.data.video;
+          if (!video) return;
+          video.volume = Math.min(1, Math.max(0, value));
+        },
+        close: function () {
+          const video = this.data.video;
+          if (video) video.pause();
+          this.isPlaying = false;
+          if (this.data.playIcon) this.data.playIcon.setAttribute('visible', true);
+          if (this.data.pauseIcon) this.data.pauseIcon.setAttribute('visible', false);
+          if (this.data.progressFill) {
+            this.data.progressFill.object3D.scale.x = 0.0001;
+            this.data.progressFill.object3D.position.x = this.data.progressX + (-this.data.progressWidth / 2);
+          }
+
+          if (this.data.ambient && this.data.ambient.components && this.data.ambient.components.sound) {
+            this.data.ambient.components.sound.pauseSound();
+          }
+
+          const scene = this.el.sceneEl;
+          if (this.data.window) {
+            this.data.window.setAttribute('visible', false);
+            return;
+          }
+          if (scene && this.data.exitVrOnClose && scene.is('vr-mode')) {
+            scene.exitVR();
+          }
+          if (this.data.splash) this.data.splash.style.display = 'flex';
+        }
+      });
+
+      AFRAME.registerComponent('quest-ui', {
+        schema: {
+          camera: { type: 'selector' },
+          rightHand: { type: 'selector' },
+          leftHand: { type: 'selector' },
+          menu: { type: 'selector' },
+          videoWindow: { type: 'selector' },
+          galleryWindow: { type: 'selector' }
+        },
+        init: function () {
+          this.onToggleMenu = () => this.toggleMenu();
+          this.onOpenVideo = () => this.openWindow(this.data.videoWindow);
+          this.onOpenGallery = () => this.openWindow(this.data.galleryWindow);
+          this.onCloseMenu = () => this.setMenuVisible(false);
+          this.onExitVr = () => this.exitVr();
+
+          const bindController = (el) => {
+            if (!el) return;
+            el.addEventListener('abuttondown', this.onToggleMenu);
+            el.addEventListener('xbuttondown', this.onToggleMenu);
+            el.addEventListener('ybuttondown', this.onToggleMenu);
+            el.addEventListener('bbuttondown', this.onToggleMenu);
+          };
+          bindController(this.data.rightHand);
+          bindController(this.data.leftHand);
+
+          this.el.addEventListener('loaded', () => {
+            const menu = this.data.menu;
+            if (!menu) return;
+            const btnVideo = menu.querySelector('#menuVideo');
+            const btnGallery = menu.querySelector('#menuGallery');
+            const btnClose = menu.querySelector('#menuClose');
+            const btnExitVr = menu.querySelector('#menuExitVr');
+            if (btnVideo) btnVideo.addEventListener('click', this.onOpenVideo);
+            if (btnGallery) btnGallery.addEventListener('click', this.onOpenGallery);
+            if (btnClose) btnClose.addEventListener('click', this.onCloseMenu);
+            if (btnExitVr) btnExitVr.addEventListener('click', this.onExitVr);
+
+            const quickMenu = this.el.querySelector('#btnMenu');
+            if (quickMenu) quickMenu.addEventListener('click', this.onToggleMenu);
+
+            const dockMenu = this.el.querySelector('#dockMenu');
+            const dockVideo = this.el.querySelector('#dockVideo');
+            const dockGallery = this.el.querySelector('#dockGallery');
+            if (dockMenu) dockMenu.addEventListener('click', this.onToggleMenu);
+            if (dockVideo) dockVideo.addEventListener('click', this.onOpenVideo);
+            if (dockGallery) dockGallery.addEventListener('click', this.onOpenGallery);
+          });
+
+          this.setMenuVisible(false);
+        },
+        remove: function () {
+          const unbindController = (el) => {
+            if (!el) return;
+            el.removeEventListener('abuttondown', this.onToggleMenu);
+            el.removeEventListener('xbuttondown', this.onToggleMenu);
+            el.removeEventListener('ybuttondown', this.onToggleMenu);
+            el.removeEventListener('bbuttondown', this.onToggleMenu);
+          };
+          unbindController(this.data.rightHand);
+          unbindController(this.data.leftHand);
+
+          const menu = this.data.menu;
+          if (!menu) return;
+          const btnVideo = menu.querySelector('#menuVideo');
+          const btnGallery = menu.querySelector('#menuGallery');
+          const btnClose = menu.querySelector('#menuClose');
+          const btnExitVr = menu.querySelector('#menuExitVr');
+          if (btnVideo) btnVideo.removeEventListener('click', this.onOpenVideo);
+          if (btnGallery) btnGallery.removeEventListener('click', this.onOpenGallery);
+          if (btnClose) btnClose.removeEventListener('click', this.onCloseMenu);
+          if (btnExitVr) btnExitVr.removeEventListener('click', this.onExitVr);
+
+          const quickMenu = this.el.querySelector('#btnMenu');
+          if (quickMenu) quickMenu.removeEventListener('click', this.onToggleMenu);
+
+          const dockMenu = this.el.querySelector('#dockMenu');
+          const dockVideo = this.el.querySelector('#dockVideo');
+          const dockGallery = this.el.querySelector('#dockGallery');
+          if (dockMenu) dockMenu.removeEventListener('click', this.onToggleMenu);
+          if (dockVideo) dockVideo.removeEventListener('click', this.onOpenVideo);
+          if (dockGallery) dockGallery.removeEventListener('click', this.onOpenGallery);
+        },
+        toggleMenu: function () {
+          const menu = this.data.menu;
+          if (!menu) return;
+          const next = !menu.getAttribute('visible');
+          this.setMenuVisible(next);
+          if (next) this.placeInFront(menu, 1.0, -0.1);
+        },
+        setMenuVisible: function (visible) {
+          if (!this.data.menu) return;
+          this.data.menu.setAttribute('visible', !!visible);
+        },
+        openWindow: function (winEl) {
+          if (!winEl) return;
+          winEl.setAttribute('visible', true);
+          this.placeInFront(winEl, 1.25, -0.1);
+          this.setMenuVisible(false);
+        },
+        exitVr: function () {
+          const scene = this.el.sceneEl;
+          if (scene && scene.is('vr-mode')) {
+            scene.exitVR();
+          }
+          this.setMenuVisible(false);
+        },
+        placeInFront: function (el, distance, yOffset) {
+          const cameraEl = this.data.camera;
+          if (!cameraEl) return;
+          const camObj = cameraEl.object3D;
+          const camPos = new THREE.Vector3();
+          const camDir = new THREE.Vector3();
+          camObj.getWorldPosition(camPos);
+          camObj.getWorldDirection(camDir);
+
+          const targetPos = camPos.clone().add(camDir.multiplyScalar(distance));
+          targetPos.y = camPos.y + (yOffset || 0);
+
+          el.object3D.position.copy(targetPos);
+
+          const look = camPos.clone();
+          look.y = targetPos.y;
+          el.object3D.lookAt(look);
+          el.object3D.rotation.x = 0;
+          el.object3D.rotation.z = 0;
+        }
+      });
+
+      AFRAME.registerComponent('pano-gallery', {
+        schema: {
+          sky: { type: 'selector' },
+          listUrl: { type: 'string', default: 'assets/panos.json' },
+          pagePrev: { type: 'selector' },
+          pageNext: { type: 'selector' },
+          title: { type: 'selector' },
+          pageLabel: { type: 'selector' }
+        },
+        init: function () {
+          this.items = [];
+          this.page = 0;
+          this.pageSize = 4;
+          this.selected = 0;
+          this._thumbHandlers = new Map();
+
+          this.onPrev = () => this.setPage(this.page - 1);
+          this.onNext = () => this.setPage(this.page + 1);
+
+          if (this.data.pagePrev) this.data.pagePrev.addEventListener('click', this.onPrev);
+          if (this.data.pageNext) this.data.pageNext.addEventListener('click', this.onNext);
+
+          this.load();
+        },
+        remove: function () {
+          if (this.data.pagePrev) this.data.pagePrev.removeEventListener('click', this.onPrev);
+          if (this.data.pageNext) this.data.pageNext.removeEventListener('click', this.onNext);
+          this.detachThumbHandlers();
+        },
+        detachThumbHandlers: function () {
+          for (const [el, fn] of this._thumbHandlers.entries()) {
+            el.removeEventListener('click', fn);
+          }
+          this._thumbHandlers.clear();
+        },
+        async load() {
+          let list = null;
+          try {
+            const res = await fetch(this.data.listUrl, { cache: 'no-cache' });
+            if (res.ok) list = await res.json();
+          } catch (e) {}
+
+          if (!Array.isArray(list) || list.length === 0) list = ['foto.png'];
+          this.items = list
+            .filter((v) => typeof v === 'string' && v.toLowerCase().endsWith('.png'))
+            .map((v) => (v.startsWith('assets/') ? v : `assets/${v}`));
+
+          const stored = Number.parseInt(localStorage.getItem('panoIndex') || '0', 10);
+          if (!Number.isNaN(stored) && this.items.length) {
+            this.selected = ((stored % this.items.length) + this.items.length) % this.items.length;
+          }
+          this.page = Math.floor(this.selected / this.pageSize);
+          this.applySelected();
+          this.render();
+        },
+        setPage: function (page) {
+          const maxPage = Math.max(0, Math.ceil(this.items.length / this.pageSize) - 1);
+          this.page = Math.min(maxPage, Math.max(0, page));
+          this.render();
+        },
+        selectIndex: function (i) {
+          if (!this.items.length) return;
+          this.selected = Math.min(this.items.length - 1, Math.max(0, i));
+          localStorage.setItem('panoIndex', String(this.selected));
+          this.applySelected();
+          this.page = Math.floor(this.selected / this.pageSize);
+          this.render();
+        },
+        applySelected: function () {
+          if (!this.data.sky || !this.items.length) return;
+          const src = this.items[this.selected];
+          this.data.sky.setAttribute('src', src);
+          if (this.data.title) {
+            const name = src.replace(/^assets\//, '');
+            this.data.title.setAttribute(
+              'text',
+              `value: 360 Gallery • ${name}; align: left; color: #EAF6FF; width: 1.6; wrapCount: 40`
+            );
+          }
+        },
+        render: function () {
+          this.detachThumbHandlers();
+          const start = this.page * this.pageSize;
+          const end = Math.min(this.items.length, start + this.pageSize);
+          const maxPage = Math.max(1, Math.ceil(this.items.length / this.pageSize));
+
+          if (this.data.pageLabel) {
+            this.data.pageLabel.setAttribute(
+              'text',
+              `value: Page ${this.page + 1}/${maxPage}; align: center; color: #A9D7FF; width: 1.0`
+            );
+          }
+
+          for (let slot = 0; slot < this.pageSize; slot++) {
+            const thumb = this.el.querySelector(`#thumb${slot}`);
+            const border = this.el.querySelector(`#thumbBorder${slot}`);
+            const idx = start + slot;
+            if (!thumb || !border) continue;
+
+            if (idx >= end) {
+              thumb.setAttribute('visible', false);
+              border.setAttribute('visible', false);
+              continue;
+            }
+
+            const src = this.items[idx];
+            thumb.setAttribute('visible', true);
+            border.setAttribute('visible', true);
+            thumb.setAttribute('material', 'src', src);
+
+            const selected = idx === this.selected;
+            border.setAttribute('material', 'color', selected ? '#00f2fe' : '#FFFFFF');
+            border.setAttribute('material', 'opacity', selected ? 0.22 : 0.08);
+
+            const fn = () => this.selectIndex(idx);
+            thumb.addEventListener('click', fn);
+            this._thumbHandlers.set(thumb, fn);
+          }
+        }
+      });
+
+      AFRAME.registerComponent('window-controls', {
+        schema: {
+          window: { type: 'selector' },
+          closeButton: { type: 'selector' }
+        },
+        init: function () {
+          this.onClose = () => {
+            if (this.data.window) this.data.window.setAttribute('visible', false);
+          };
+          if (this.data.closeButton) this.data.closeButton.addEventListener('click', this.onClose);
+        },
+        remove: function () {
+          if (this.data.closeButton) this.data.closeButton.removeEventListener('click', this.onClose);
+        }
+      });
+
+      async function unlockVideo(videoEl) {
+        if (!videoEl) return;
+        videoEl.muted = true;
+        videoEl.playsInline = true;
+        videoEl.setAttribute('playsinline', '');
+        videoEl.setAttribute('webkit-playsinline', '');
+        try {
+          await videoEl.play();
+          videoEl.pause();
+          videoEl.currentTime = 0;
+        } catch (e) {}
+      }
+
+      function playAmbient(ambientEl) {
+        if (!ambientEl || !ambientEl.components || !ambientEl.components.sound) return;
+        ambientEl.components.sound.playSound();
+      }
+
+      document.addEventListener('DOMContentLoaded', function () {
+        const splash = document.querySelector('#splash');
+        const startBtn = document.querySelector('#start-btn');
+        const scene = document.querySelector('#scene');
+        const videoEl = document.querySelector('#bios-video');
+        const ambientEl = document.querySelector('#ambientSound');
+        const menu = document.querySelector('#menuPanel');
+        const dock = document.querySelector('#dock');
+
+        const start = async () => {
+          await unlockVideo(videoEl);
+          if (scene && !scene.hasLoaded) {
+            await new Promise((resolve) => scene.addEventListener('loaded', resolve, { once: true }));
+          }
+          playAmbient(ambientEl);
+          if (scene) {
+            try { await scene.enterVR(); } catch (e) {}
+          }
+          splash.style.display = 'none';
+          if (dock) dock.setAttribute('visible', true);
+          if (scene && scene.components && scene.components['quest-ui'] && menu) {
+            scene.components['quest-ui'].setMenuVisible(false);
+          } else if (menu) {
+            menu.setAttribute('visible', false);
+          }
+        };
+
+        startBtn.addEventListener('click', start);
+      });
+    </script>
+  </head>
+  <body>
+    <div id="splash">
+      <h1>Cinema Glass</h1>
+      <p>Pak het scherm vast aan de randen. Klik op de knop om te spelen.</p>
+      <button id="start-btn">Enter VR</button>
+    </div>
+
+    <a-scene
+      id="scene"
+      renderer="antialias: true; colorManagement: true"
+      vr-mode-ui="enabled: true"
+      webxr="optionalFeatures: local-floor, bounded-floor"
+      quest-ui="camera: #camera; rightHand: #rightHand; leftHand: #leftHand; menu: #menuPanel; videoWindow: #player-rig; galleryWindow: #galleryWindow"
+    >
+      <a-assets>
+        <video id="bios-video" src="assets/video.mp4" loop preload="auto" crossorigin="anonymous" playsinline webkit-playsinline></video>
+      </a-assets>
+
+      <a-sky id="sky" src="assets/foto.png" rotation="0 -90 0" material="shader: flat; side: back; toneMapped: false"></a-sky>
+
+      <a-entity id="cameraRig" position="0 0 0">
+        <a-camera id="camera" position="0 1.6 0" wasd-controls-enabled="false">
+          <a-entity id="mouseCursor" cursor="rayOrigin: mouse; fuse: false" raycaster="objects: .ui-hit"></a-entity>
+
+          <a-entity id="dock" visible="false" position="0 -0.36 -0.85">
+            <a-plane
+              width="0.62"
+              height="0.12"
+              material="color: #000; opacity: 0.22; transparent: true"
+            ></a-plane>
+            <a-plane
+              width="0.60"
+              height="0.10"
+              position="0 0 0.001"
+              material="color: #0b1620; opacity: 0.62; transparent: true"
+            ></a-plane>
+
+            <a-circle
+              id="dockMenu"
+              class="ui-hit"
+              radius="0.042"
+              position="-0.22 0 0.002"
+              material="color: #000; opacity: 0.55; transparent: true"
+              text="value: ≡; align: center; color: #FFF; width: 1.2"
+            ></a-circle>
+            <a-circle
+              id="dockVideo"
+              class="ui-hit"
+              radius="0.042"
+              position="0 0 0.002"
+              material="color: #000; opacity: 0.55; transparent: true"
+              text="value: ▶; align: center; color: #FFF; width: 1.2"
+            ></a-circle>
+            <a-circle
+              id="dockGallery"
+              class="ui-hit"
+              radius="0.042"
+              position="0.22 0 0.002"
+              material="color: #000; opacity: 0.55; transparent: true"
+              text="value: 360; align: center; color: #FFF; width: 1.0"
+            ></a-circle>
+          </a-entity>
+        </a-camera>
+        <a-entity id="rightHand" laser-controls="hand: right" raycaster="objects: .ui-hit" cursor="rayOrigin: entity; fuse: false"></a-entity>
+        <a-entity id="leftHand" laser-controls="hand: left" raycaster="objects: .ui-hit" cursor="rayOrigin: entity; fuse: false"></a-entity>
+        <a-entity id="ambientSound" sound="src: url(assets/geluid.mp3); autoplay: false; loop: true; volume: 0.3"></a-entity>
+      </a-entity>
+
+      <a-entity id="menuPanel" visible="false">
+        <a-plane
+          width="0.92"
+          height="0.62"
+          material="color: #000; opacity: 0.28; transparent: true"
+        ></a-plane>
+        <a-plane
+          width="0.90"
+          height="0.60"
+          position="0 0 0.001"
+          material="color: #0b1620; opacity: 0.62; transparent: true"
+        ></a-plane>
+
+        <a-entity
+          position="-0.42 0.25 0.002"
+          text="value: Menu; align: left; color: #EAF6FF; width: 1.2"
+        ></a-entity>
+        <a-entity
+          position="-0.42 0.17 0.002"
+          text="value: A/B/X/Y; align: left; color: #A9D7FF; width: 1.2"
+        ></a-entity>
+
+        <a-plane
+          id="menuVideo"
+          class="ui-hit"
+          width="0.78"
+          height="0.16"
+          position="0 0.05 0.002"
+          material="color: #FFFFFF; opacity: 0.10; transparent: true"
+        ></a-plane>
+        <a-entity
+          position="-0.34 0.05 0.003"
+          text="value: Video Player; align: left; color: #EAF6FF; width: 1.4"
+        ></a-entity>
+
+        <a-plane
+          id="menuGallery"
+          class="ui-hit"
+          width="0.78"
+          height="0.16"
+          position="0 -0.14 0.002"
+          material="color: #FFFFFF; opacity: 0.10; transparent: true"
+        ></a-plane>
+        <a-entity
+          position="-0.34 -0.14 0.003"
+          text="value: 360 Gallery; align: left; color: #EAF6FF; width: 1.4"
+        ></a-entity>
+
+        <a-plane
+          id="menuExitVr"
+          class="ui-hit"
+          width="0.78"
+          height="0.16"
+          position="0 -0.33 0.002"
+          material="color: #FFFFFF; opacity: 0.10; transparent: true"
+        ></a-plane>
+        <a-entity
+          position="-0.34 -0.33 0.003"
+          text="value: Exit VR; align: left; color: #A9D7FF; width: 1.4"
+        ></a-entity>
+
+        <a-circle
+          id="menuClose"
+          class="ui-hit"
+          radius="0.06"
+          position="0.40 0.25 0.004"
+          material="color: #000; opacity: 0.55; transparent: true"
+          text="value: X; align: center; color: #FFF; width: 1.4"
+        ></a-circle>
+      </a-entity>
+
+      <a-entity
+        id="player-rig"
+        position="0 1.5 -2"
+        video-controls="
+          video: #bios-video;
+          ambient: #ambientSound;
+          splash: #splash;
+          window: #player-rig;
+          playButton: #btnPlayPause;
+          playIcon: #iconPlay;
+          pauseIcon: #iconPause;
+          progressHit: #progressHit;
+          progressFill: #progressFill;
+          progressWidth: 1.55;
+          progressX: -0.1;
+          volDown: #volDown;
+          volUp: #volUp;
+          closeButton: #btnClose;
+        "
+      >
+        <a-plane
+          id="grabHandle"
+          class="ui-hit"
+          movable-screen="target: #player-rig"
+          width="2.3"
+          height="1.4"
+          material="color: #000; opacity: 0.15; transparent: true; side: double"
+        ></a-plane>
+
+        <a-plane
+          width="2.28"
+          height="1.38"
+          material="color: #0b1620; opacity: 0.22; transparent: true"
+          position="0 0 0.001"
+        ></a-plane>
+
+        <a-plane
+          id="videoTitleBar"
+          class="ui-hit"
+          movable-screen="target: #player-rig"
+          width="2.28"
+          height="0.14"
+          position="0 0.62 0.006"
+          material="color: #000; opacity: 0.45; transparent: true"
+        ></a-plane>
+        <a-circle
+          id="btnMenu"
+          class="ui-hit"
+          radius="0.055"
+          position="-1.06 0.62 0.008"
+          material="color: #000; opacity: 0.55; transparent: true"
+          text="value: ≡; align: center; color: #FFF; width: 1.4"
+        ></a-circle>
+        <a-entity
+          position="-0.92 0.62 0.007"
+          text="value: Video Player; align: left; color: #EAF6FF; width: 2.2"
+        ></a-entity>
+
+        <a-plane
+          id="videoScreen"
+          position="0 0 0.002"
+          width="2"
+          height="1.125"
+          fit-video="video: #bios-video; maxHeight: 1.125"
+          material="src: #bios-video; shader: flat; side: double; toneMapped: false"
+        ></a-plane>
+
+        <a-entity id="ui" position="0 0 0.03">
+          <a-circle
+            id="btnPlayPause"
+            class="ui-hit"
+            radius="0.14"
+            position="0 0.05 0"
+            material="color: #000; opacity: 0.65; transparent: true"
+          >
+            <a-triangle
+              id="iconPlay"
+              vertex-a="0 0.06 0.001"
+              vertex-b="-0.05 -0.06 0.001"
+              vertex-c="0.07 0 0.001"
+              material="color: #FFF; shader: flat"
+            ></a-triangle>
+            <a-entity id="iconPause" visible="false" position="0 0 0.001">
+              <a-plane width="0.03" height="0.12" position="-0.03 0 0" material="color: #FFF; shader: flat"></a-plane>
+              <a-plane width="0.03" height="0.12" position="0.03 0 0" material="color: #FFF; shader: flat"></a-plane>
+            </a-entity>
+          </a-circle>
+
+          <a-plane
+            id="bottomBar"
+            width="2.05"
+            height="0.18"
+            position="0 -0.54 0"
+            material="color: #000; opacity: 0.55; transparent: true"
+          ></a-plane>
+
+          <a-entity
+            position="-0.99 -0.54 0.004"
+            text="value: VIDEO; align: left; color: #A9D7FF; width: 1.2"
+          ></a-entity>
+
+          <a-plane
+            id="progressBg"
+            width="1.55"
+            height="0.035"
+            position="-0.1 -0.54 0.002"
+            material="color: #FFF; opacity: 0.25; transparent: true"
+          ></a-plane>
+          <a-plane
+            id="progressFill"
+            width="1.55"
+            height="0.035"
+            position="-0.875 -0.54 0.003"
+            scale="0.0001 1 1"
+            material="color: #00f2fe; opacity: 0.9; transparent: true"
+          ></a-plane>
+          <a-plane
+            id="progressHit"
+            class="ui-hit"
+            width="1.65"
+            height="0.12"
+            position="-0.1 -0.54 0.004"
+            material="color: #FFF; opacity: 0.001; transparent: true"
+          ></a-plane>
+
+          <a-circle
+            id="volDown"
+            class="ui-hit"
+            radius="0.07"
+            position="0.82 -0.54 0.004"
+            material="color: #FFF; opacity: 0.15; transparent: true"
+            text="value: -; align: center; color: #FFF; width: 1.5"
+          ></a-circle>
+          <a-circle
+            id="volUp"
+            class="ui-hit"
+            radius="0.07"
+            position="0.98 -0.54 0.004"
+            material="color: #FFF; opacity: 0.15; transparent: true"
+            text="value: +; align: center; color: #FFF; width: 1.5"
+          ></a-circle>
+
+          <a-circle
+            id="btnClose"
+            class="ui-hit"
+            radius="0.065"
+            position="1.06 0.62 0.008"
+            material="color: #000; opacity: 0.65; transparent: true"
+            text="value: —; align: center; color: #FFF; width: 1.5"
+          ></a-circle>
+        </a-entity>
+      </a-entity>
+
+      <a-entity
+        id="galleryWindow"
+        visible="false"
+        window-controls="window: #galleryWindow; closeButton: #galClose"
+        pano-gallery="sky: #sky; listUrl: assets/panos.json; pagePrev: #galPrev; pageNext: #galNext; title: #galTitle; pageLabel: #galPageLabel"
+      >
+        <a-plane width="1.35" height="0.95" material="color: #000; opacity: 0.22; transparent: true"></a-plane>
+        <a-plane
+          width="1.33"
+          height="0.93"
+          position="0 0 0.001"
+          material="color: #0b1620; opacity: 0.62; transparent: true"
+        ></a-plane>
+
+        <a-plane
+          class="ui-hit"
+          movable-screen="target: #galleryWindow"
+          width="1.33"
+          height="0.14"
+          position="0 0.40 0.002"
+          material="color: #000; opacity: 0.45; transparent: true"
+        ></a-plane>
+        <a-entity id="galTitle" position="-0.62 0.40 0.003"></a-entity>
+        <a-circle
+          id="galClose"
+          class="ui-hit"
+          radius="0.055"
+          position="0.60 0.40 0.004"
+          material="color: #000; opacity: 0.55; transparent: true"
+          text="value: —; align: center; color: #FFF; width: 1.3"
+        ></a-circle>
+
+        <a-plane id="thumbBorder0" width="0.60" height="0.30" position="-0.33 0.15 0.002" material="color: #FFF; opacity: 0.08; transparent: true"></a-plane>
+        <a-plane id="thumb0" class="ui-hit" width="0.56" height="0.26" position="-0.33 0.15 0.003" material="shader: flat; toneMapped: false; side: double"></a-plane>
+
+        <a-plane id="thumbBorder1" width="0.60" height="0.30" position="0.33 0.15 0.002" material="color: #FFF; opacity: 0.08; transparent: true"></a-plane>
+        <a-plane id="thumb1" class="ui-hit" width="0.56" height="0.26" position="0.33 0.15 0.003" material="shader: flat; toneMapped: false; side: double"></a-plane>
+
+        <a-plane id="thumbBorder2" width="0.60" height="0.30" position="-0.33 -0.18 0.002" material="color: #FFF; opacity: 0.08; transparent: true"></a-plane>
+        <a-plane id="thumb2" class="ui-hit" width="0.56" height="0.26" position="-0.33 -0.18 0.003" material="shader: flat; toneMapped: false; side: double"></a-plane>
+
+        <a-plane id="thumbBorder3" width="0.60" height="0.30" position="0.33 -0.18 0.002" material="color: #FFF; opacity: 0.08; transparent: true"></a-plane>
+        <a-plane id="thumb3" class="ui-hit" width="0.56" height="0.26" position="0.33 -0.18 0.003" material="shader: flat; toneMapped: false; side: double"></a-plane>
+
+        <a-circle id="galPrev" class="ui-hit" radius="0.055" position="-0.12 -0.40 0.004" material="color: #000; opacity: 0.55; transparent: true" text="value: <; align: center; color: #FFF; width: 1.2"></a-circle>
+        <a-circle id="galNext" class="ui-hit" radius="0.055" position="0.12 -0.40 0.004" material="color: #000; opacity: 0.55; transparent: true" text="value: >; align: center; color: #FFF; width: 1.2"></a-circle>
+        <a-entity id="galPageLabel" position="0 -0.40 0.004"></a-entity>
+      </a-entity>
+    </a-scene>
+  </body>
+</html>
