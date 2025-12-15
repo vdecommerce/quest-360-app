@@ -2,715 +2,142 @@
 <html>
   <head>
     <title>VR Cinema - Glass Design</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <meta name="theme-color" content="#00f2fe">
-    <link rel="manifest" href="manifest.webmanifest">
-    <link rel="icon" href="assets/pwa-icon.svg" type="image/svg+xml">
-    <link rel="apple-touch-icon" href="assets/pwa-icon.svg">
+    <link rel="icon" href="data:,">
     <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
 
     <style>
-      :root {
-        --bg: rgba(0, 0, 0, 0.9);
-        --panel: rgba(255, 255, 255, 0.06);
-        --text: rgba(255, 255, 255, 0.92);
-        --muted: rgba(255, 255, 255, 0.7);
-        --accent: #00f2fe;
-        --accent2: #4facfe;
-        --radius: 18px;
-        --shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
-      }
-      html,
-      body {
-        height: 100%;
-        margin: 0;
-        background: #000;
-        overscroll-behavior: none;
-        touch-action: manipulation;
-        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto,
-          Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
-        color: var(--text);
-      }
-      a-scene {
-        position: fixed;
-        inset: 0;
-      }
-
       #splash {
-        position: fixed;
-        z-index: 999;
-        inset: 0;
-        padding: max(18px, env(safe-area-inset-top))
-          max(18px, env(safe-area-inset-right))
-          max(18px, env(safe-area-inset-bottom))
-          max(18px, env(safe-area-inset-left));
-        background: radial-gradient(
-            1200px 700px at 15% 10%,
-            rgba(79, 172, 254, 0.15),
-            transparent 55%
-          ),
-          radial-gradient(
-            900px 600px at 90% 30%,
-            rgba(0, 242, 254, 0.12),
-            transparent 60%
-          ),
-          var(--bg);
-        display: grid;
-        place-items: center;
+        position: absolute; z-index: 999; top: 0; left: 0; 
+        width: 100%; height: 100%; background: rgba(0,0,0,0.9); 
+        display: flex; flex-direction: column; justify-content: center; align-items: center; color: white; font-family: sans-serif;
       }
-      #splash-card {
-        width: min(560px, 100%);
-        padding: 20px 20px 16px;
-        border-radius: var(--radius);
-        background: linear-gradient(
-          180deg,
-          rgba(255, 255, 255, 0.08),
-          rgba(255, 255, 255, 0.04)
-        );
-        border: 1px solid rgba(255, 255, 255, 0.12);
-        box-shadow: var(--shadow);
-        backdrop-filter: blur(10px);
-        max-height: calc(100dvh - 2 * max(18px, env(safe-area-inset-top)));
-        overflow: auto;
-      }
-      #splash-card h1 {
-        margin: 0 0 6px;
-        font-size: 28px;
-        letter-spacing: 0.2px;
-      }
-      #splash-card p {
-        margin: 0 0 14px;
-        color: var(--muted);
-        line-height: 1.35;
-      }
-      #tips {
-        margin: 0 0 14px;
-        padding: 12px 12px;
-        border-radius: 14px;
-        background: var(--panel);
-        border: 1px solid rgba(255, 255, 255, 0.12);
-        color: var(--muted);
-      }
-      #tips ul {
-        margin: 0;
-        padding-left: 18px;
-      }
-      #tips li {
-        margin: 6px 0;
-      }
-      .btn-row {
-        display: flex;
-        gap: 10px;
-        flex-wrap: wrap;
-        align-items: center;
-      }
-
       #start-btn {
-        appearance: none;
-        border: none;
-        cursor: pointer;
-        padding: 14px 18px;
-        font-size: 18px;
-        font-weight: 650;
-        color: #021015;
-        border-radius: 999px;
-        background: linear-gradient(45deg, var(--accent2), var(--accent));
-        box-shadow: 0 8px 24px rgba(0, 242, 254, 0.22);
-        transition: transform 120ms ease, filter 120ms ease;
-      }
-      #start-btn:active {
-        transform: translateY(1px) scale(0.99);
-      }
-      #start-btn:hover {
-        filter: brightness(1.05);
-      }
-      #start-btn:focus-visible {
-        outline: 3px solid rgba(0, 242, 254, 0.45);
-        outline-offset: 3px;
-      }
-
-      #enter-vr-btn {
-        appearance: none;
-        border: 1px solid rgba(255, 255, 255, 0.22);
-        cursor: pointer;
-        padding: 14px 18px;
-        font-size: 18px;
-        font-weight: 600;
-        color: var(--text);
-        border-radius: 999px;
-        background: rgba(255, 255, 255, 0.08);
-        transition: transform 120ms ease, background 120ms ease;
-      }
-      #enter-vr-btn:hover {
-        background: rgba(255, 255, 255, 0.12);
-      }
-      #enter-vr-btn:active {
-        transform: translateY(1px) scale(0.99);
-      }
-      #enter-vr-btn:focus-visible {
-        outline: 3px solid rgba(255, 255, 255, 0.28);
-        outline-offset: 3px;
-      }
-      #enter-vr-btn[hidden] {
-        display: none;
-      }
-
-      #hud {
-        position: fixed;
-        z-index: 998;
-        left: max(14px, env(safe-area-inset-left));
-        right: max(14px, env(safe-area-inset-right));
-        bottom: max(14px, env(safe-area-inset-bottom));
-        display: none;
-        pointer-events: none;
-      }
-      #hud-inner {
-        pointer-events: auto;
-        width: min(760px, 100%);
-        margin: 0 auto;
-        padding: 10px 10px;
-        border-radius: 16px;
-        background: rgba(0, 0, 0, 0.55);
-        border: 1px solid rgba(255, 255, 255, 0.14);
-        backdrop-filter: blur(10px);
-        box-shadow: 0 18px 60px rgba(0, 0, 0, 0.35);
-        display: grid;
-        gap: 10px;
-      }
-      #hud-row {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 10px;
-        align-items: center;
-        justify-content: space-between;
-      }
-      .hud-group {
-        display: flex;
-        gap: 8px;
-        flex-wrap: wrap;
-        align-items: center;
-      }
-      .hud-btn {
-        appearance: none;
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        background: rgba(255, 255, 255, 0.08);
-        color: var(--text);
-        padding: 10px 12px;
-        border-radius: 12px;
-        cursor: pointer;
-        font-weight: 600;
-      }
-      .hud-btn:active {
-        transform: translateY(1px);
-      }
-      .hud-btn:focus-visible {
-        outline: 3px solid rgba(0, 242, 254, 0.35);
-        outline-offset: 2px;
-      }
-      .hud-btn.primary {
-        border-color: rgba(0, 242, 254, 0.32);
-        background: rgba(0, 242, 254, 0.12);
-      }
-      .hud-label {
-        color: var(--muted);
-        font-size: 13px;
-      }
-      #volume {
-        width: 160px;
-        accent-color: var(--accent);
-      }
-      #hud-hint {
-        color: var(--muted);
-        font-size: 13px;
-        line-height: 1.2;
-      }
-
-      #hud[data-collapsed="true"] #hud-inner {
-        width: min(520px, 100%);
-        padding: 8px 8px;
-      }
-      #hud[data-collapsed="true"] #hud-row-move,
-      #hud[data-collapsed="true"] #hud-hint,
-      #hud[data-collapsed="true"] #hud-reset,
-      #hud[data-collapsed="true"] .hud-volume {
-        display: none !important;
-      }
-
-      @media (max-width: 480px) {
-        #splash-card {
-          padding: 16px 14px 12px;
-          border-radius: 16px;
-        }
-        #splash-card h1 { font-size: 24px; }
-        #tips { font-size: 13px; }
-        #start-btn,
-        #enter-vr-btn {
-          padding: 12px 14px;
-          font-size: 16px;
-          width: 100%;
-          justify-content: center;
-        }
-        .btn-row { gap: 8px; }
-
-        #hud-inner { padding: 8px 8px; border-radius: 14px; }
-        .hud-btn { padding: 9px 10px; border-radius: 11px; }
-        #volume { width: min(46vw, 160px); }
-
-        #hud-row-main { justify-content: center; }
-        #hud-row-move .hud-btn { flex: 1 1 calc(33.333% - 8px); }
-      }
-
-      @media (max-width: 480px) and (orientation: landscape) {
-        #hud { left: max(10px, env(safe-area-inset-left)); right: max(10px, env(safe-area-inset-right)); bottom: max(10px, env(safe-area-inset-bottom)); }
-        #hud-row-move .hud-btn { flex: 1 1 calc(16.666% - 8px); }
-        #hud-hint { display: none; }
+        padding: 20px 40px; font-size: 24px; background: linear-gradient(45deg, #4facfe, #00f2fe);
+        color: white; border: none; border-radius: 50px; cursor: pointer; margin-top: 20px;
+        box-shadow: 0 4px 15px rgba(0,242,254, 0.4);
       }
     </style>
 
     <script>
-      AFRAME.registerComponent("face-viewer", {
+      // --- DE MOVE TOOL (Nu voor de hele container) ---
+      AFRAME.registerComponent('drag-handler', {
         init: function () {
-          this._tmpTargetWorldQ = new THREE.Quaternion();
-          this._tmpParentWorldQ = new THREE.Quaternion();
-          this._tmpLocalQ = new THREE.Quaternion();
-          this._tmpCamPos = new THREE.Vector3();
-          this._tmpElPos = new THREE.Vector3();
-          this._tmpEuler = new THREE.Euler();
-        },
-        tick: function () {
-          const sceneEl = this.el.sceneEl;
-          const cameraObj =
-            sceneEl?.camera?.el?.object3D ||
-            sceneEl?.querySelector?.("[camera]")?.object3D;
-          const parentObj = this.el.object3D.parent;
-          if (!cameraObj || !parentObj) return;
-
-          cameraObj.getWorldPosition(this._tmpCamPos);
-          this.el.object3D.getWorldPosition(this._tmpElPos);
-
-          const dx = this._tmpCamPos.x - this._tmpElPos.x;
-          const dz = this._tmpCamPos.z - this._tmpElPos.z;
-          const yawRad = Math.atan2(dx, dz);
-
-          this._tmpTargetWorldQ.setFromEuler(
-            this._tmpEuler.set(0, yawRad, 0, "YXZ")
-          );
-          parentObj.getWorldQuaternion(this._tmpParentWorldQ);
-          this._tmpLocalQ
-            .copy(this._tmpParentWorldQ)
-            .invert()
-            .multiply(this._tmpTargetWorldQ);
-          this.el.object3D.quaternion.copy(this._tmpLocalQ);
-        },
-      });
-
-      AFRAME.registerComponent("drag-handler", {
-        init: function () {
-          this.el.addEventListener("mousedown", this.onMouseDown.bind(this));
-          this.el.addEventListener("mouseup", this.onMouseUp.bind(this));
+          // We luisteren naar events op deze container (bubbling zorgt dat clicks op kinderen ook werken)
+          this.el.addEventListener('mousedown', this.onMouseDown.bind(this));
+          this.el.addEventListener('mouseup', this.onMouseUp.bind(this));
           this.isDragging = false;
         },
         onMouseDown: function (evt) {
-          if (
-            evt.target.id === "play-button" ||
-            evt.target.parentNode?.id === "play-button"
-          )
-            return;
+          // Check of we de Play-knop raken, dan NIET slepen
+          if (evt.target.id === "play-button" || evt.target.parentNode.id === "play-button") return;
 
-          const cursorEl = evt.detail?.cursorEl;
-          if (!cursorEl || !cursorEl.object3D) return;
-
-          cursorEl.object3D.attach(this.el.object3D);
-          this.isDragging = true;
-        },
-        onMouseUp: function () {
-          if (!this.isDragging) return;
-
-          const scene = document.querySelector("a-scene");
-          if (scene && scene.object3D) {
-            scene.object3D.attach(this.el.object3D);
+          var controller = evt.detail.cursorEl;
+          if (controller) {
+             controller.object3D.attach(this.el.object3D);
+             this.isDragging = true;
           }
-
-          this.isDragging = false;
         },
+        onMouseUp: function (evt) {
+          if (this.isDragging) {
+             var scene = document.querySelector('a-scene');
+             scene.object3D.attach(this.el.object3D);
+             this.isDragging = false;
+          }
+        }
       });
 
-      document.addEventListener("DOMContentLoaded", function () {
-        const splash = document.querySelector("#splash");
-        const startBtn = document.querySelector("#start-btn");
-        const enterVrBtn = document.querySelector("#enter-vr-btn");
-        const videoElement = document.querySelector("#bios-video");
-        const ambientSound = document.querySelector("#ambient-sound-entity");
-        const playButton = document.querySelector("#play-button");
-        const playIcon = document.querySelector("#play-icon");
-        const screen = document.querySelector("#screen");
-        const sceneEl = document.querySelector("a-scene");
-        const rig = document.querySelector("#cinema-rig");
-
-        const hud = document.querySelector("#hud");
-        const hudPlay = document.querySelector("#hud-play");
-        const hudReset = document.querySelector("#hud-reset");
-        const volume = document.querySelector("#volume");
-        const moveNear = document.querySelector("#move-near");
-        const moveFar = document.querySelector("#move-far");
-        const moveLeft = document.querySelector("#move-left");
-        const moveRight = document.querySelector("#move-right");
-        const moveUp = document.querySelector("#move-up");
-        const moveDown = document.querySelector("#move-down");
-        const hudToggle = document.querySelector("#hud-toggle");
-
+      // --- DE LOGICA ---
+      document.addEventListener('DOMContentLoaded', function() {
+        const splash = document.querySelector('#splash');
+        const startBtn = document.querySelector('#start-btn');
+        const videoElement = document.querySelector('#bios-video');
+        const ambientSound = document.querySelector('#ambient-sound-entity');
+        const playButton = document.querySelector('#play-button');
+        const playIcon = document.querySelector('#play-icon');
+        
         let isPlaying = false;
-        const defaultRig = { x: 0, y: 2.5, z: -5 };
-        const defaultYaw = 0;
 
-        function straightenRig(keepYaw = true) {
-          const rot = rig.getAttribute("rotation") || { x: 0, y: 0, z: 0 };
-          const yaw = keepYaw ? (rot.y || 0) : defaultYaw;
-          rig.setAttribute("rotation", `0 ${yaw} 0`);
-        }
+        startBtn.addEventListener('click', function() {
+          splash.style.display = 'none';
+          ambientSound.components.sound.playSound();
+          videoElement.play().then(() => { videoElement.pause(); });
+        });
 
-        function showHud(shouldShow) {
-          if (!hud) return;
-          hud.style.display = shouldShow ? "block" : "none";
-        }
-
-        function setRigPosition(x, y, z) {
-          const clamped = {
-            x: Math.max(-8, Math.min(8, x)),
-            y: Math.max(0.8, Math.min(6, y)),
-            z: Math.max(-14, Math.min(-1.5, z)),
-          };
-          rig.setAttribute("position", `${clamped.x} ${clamped.y} ${clamped.z}`);
-          straightenRig(true);
-        }
-
-        function nudgeRig(dx, dy, dz) {
-          const pos = rig.getAttribute("position");
-          setRigPosition(pos.x + dx, pos.y + dy, pos.z + dz);
-        }
-
-        function updateUiFromPlayback() {
-          if (isPlaying) {
-            playIcon.setAttribute("text", "value: ||");
-            playButton.setAttribute(
-              "material",
-              "color: #00f2fe; opacity: 0.6"
-            );
-            if (hudPlay) hudPlay.textContent = "Pauze";
-          } else {
-            playIcon.setAttribute("text", "value: \u25B6");
-            playButton.setAttribute(
-              "material",
-              "color: white; opacity: 0.2"
-            );
-            if (hudPlay) hudPlay.textContent = "Afspelen";
-          }
-        }
-
-        function togglePlayback() {
+        playButton.addEventListener('click', function() {
           if (isPlaying) {
             videoElement.pause();
+            // Verander icoon naar PLAY (▶)
+            playIcon.setAttribute('text', 'value: \u25B6'); 
+            // Kleur terug naar wit glas
+            playButton.setAttribute('material', 'color: white; opacity: 0.2');
           } else {
-            videoElement.play().catch(() => {});
+            videoElement.play();
+            // Verander icoon naar PAUSE (||)
+            playIcon.setAttribute('text', 'value: ||'); 
+            // Kleur naar actief blauw
+            playButton.setAttribute('material', 'color: #00f2fe; opacity: 0.6');
           }
-        }
-
-        function unlockMedia() {
-          try {
-            if (ambientSound?.components?.sound)
-              ambientSound.components.sound.playSound();
-          } catch (_) {}
-
-          videoElement
-            .play()
-            .then(() => {
-              videoElement.pause();
-              videoElement.currentTime = Math.max(
-                0,
-                videoElement.currentTime || 0
-              );
-            })
-            .catch(() => {});
-        }
-
-        startBtn.addEventListener("click", function () {
-          splash.style.display = "none";
-          unlockMedia();
-          showHud(true);
+          isPlaying = !isPlaying;
         });
 
-        if (enterVrBtn) {
-          enterVrBtn.addEventListener("click", function () {
-            splash.style.display = "none";
-            unlockMedia();
-            if (sceneEl?.enterVR) sceneEl.enterVR();
-          });
-        }
-
-        playButton.addEventListener("click", togglePlayback);
-        if (screen) screen.addEventListener("click", togglePlayback);
-
-        videoElement.addEventListener("play", function () {
-          isPlaying = true;
-          updateUiFromPlayback();
+        // Hover effectjes voor de knop
+        playButton.addEventListener('mouseenter', function() {
+          if(!isPlaying) this.setAttribute('material', 'opacity: 0.5');
         });
-        videoElement.addEventListener("pause", function () {
-          isPlaying = false;
-          updateUiFromPlayback();
+        playButton.addEventListener('mouseleave', function() {
+           if(!isPlaying) this.setAttribute('material', 'opacity: 0.2');
         });
-
-        if (hudPlay) hudPlay.addEventListener("click", togglePlayback);
-        if (hudReset)
-          hudReset.addEventListener("click", function () {
-            setRigPosition(defaultRig.x, defaultRig.y, defaultRig.z);
-            straightenRig(false);
-          });
-        if (volume) {
-          volume.addEventListener("input", function () {
-            videoElement.volume = Number(volume.value);
-          });
-          volume.value = String(videoElement.volume ?? 1);
-        }
-
-        const step = 0.35;
-        if (moveNear) moveNear.addEventListener("click", () => nudgeRig(0, 0, step));
-        if (moveFar) moveFar.addEventListener("click", () => nudgeRig(0, 0, -step));
-        if (moveLeft) moveLeft.addEventListener("click", () => nudgeRig(-step, 0, 0));
-        if (moveRight) moveRight.addEventListener("click", () => nudgeRig(step, 0, 0));
-        if (moveUp) moveUp.addEventListener("click", () => nudgeRig(0, step, 0));
-        if (moveDown) moveDown.addEventListener("click", () => nudgeRig(0, -step, 0));
-
-        function setHudCollapsed(collapsed) {
-          if (!hud) return;
-          hud.dataset.collapsed = collapsed ? "true" : "false";
-          if (hudToggle) hudToggle.textContent = collapsed ? "Toon meer" : "Minimaliseer";
-          try {
-            localStorage.setItem("hudCollapsed", collapsed ? "1" : "0");
-          } catch (_) {}
-        }
-
-        if (hudToggle) {
-          hudToggle.addEventListener("click", function () {
-            const collapsed = hud?.dataset?.collapsed === "true";
-            setHudCollapsed(!collapsed);
-          });
-        }
-
-        playButton.addEventListener("mouseenter", function () {
-          if (!isPlaying) this.setAttribute("material", "opacity: 0.5");
-        });
-        playButton.addEventListener("mouseleave", function () {
-          if (!isPlaying) this.setAttribute("material", "opacity: 0.2");
-        });
-
-        document.addEventListener(
-          "keydown",
-          function (e) {
-            if (splash.style.display !== "none") return;
-            const key = e.key.toLowerCase();
-            if (key === " " || key === "k") {
-              e.preventDefault();
-              togglePlayback();
-              return;
-            }
-            if (key === "h") {
-              const collapsed = hud?.dataset?.collapsed === "true";
-              setHudCollapsed(!collapsed);
-              return;
-            }
-            if (key === "r") {
-              setRigPosition(defaultRig.x, defaultRig.y, defaultRig.z);
-              straightenRig(false);
-              return;
-            }
-            const moveBoost = e.shiftKey ? 0.65 : step;
-            if (key === "arrowleft" || key === "a") nudgeRig(-moveBoost, 0, 0);
-            if (key === "arrowright" || key === "d") nudgeRig(moveBoost, 0, 0);
-            if (key === "arrowup" || key === "w") nudgeRig(0, 0, -moveBoost);
-            if (key === "arrowdown" || key === "s") nudgeRig(0, 0, moveBoost);
-            if (key === "q") nudgeRig(0, moveBoost, 0);
-            if (key === "e") nudgeRig(0, -moveBoost, 0);
-          },
-          { passive: false }
-        );
-
-        if (sceneEl) {
-          sceneEl.addEventListener("enter-vr", function () {
-            showHud(false);
-          });
-          sceneEl.addEventListener("exit-vr", function () {
-            if (splash.style.display === "none") showHud(true);
-          });
-        }
-
-        async function initVrButton() {
-          if (!enterVrBtn) return;
-          const xr = navigator.xr;
-          if (!xr?.isSessionSupported) {
-            enterVrBtn.hidden = true;
-            return;
-          }
-          try {
-            const supported = await xr.isSessionSupported("immersive-vr");
-            enterVrBtn.hidden = !supported;
-          } catch (_) {
-            enterVrBtn.hidden = true;
-          }
-        }
-
-        initVrButton();
-        updateUiFromPlayback();
-
-        try {
-          const saved = localStorage.getItem("hudCollapsed");
-          if (saved === null) {
-            const isMobileSized =
-              window.matchMedia &&
-              (window.matchMedia("(max-width: 480px)").matches ||
-                window.matchMedia("(pointer: coarse)").matches);
-            setHudCollapsed(Boolean(isMobileSized));
-          } else {
-            setHudCollapsed(saved === "1");
-          }
-        } catch (_) {}
-        straightenRig(false);
-
-        if ("serviceWorker" in navigator) {
-          window.addEventListener("load", () => {
-            navigator.serviceWorker.register("./sw.js").catch(() => {});
-          });
-        }
       });
     </script>
   </head>
   <body>
+    
     <div id="splash">
-      <div id="splash-card" role="dialog" aria-modal="true" aria-label="Start Cinema Glass">
-        <h1>Cinema Glass</h1>
-        <p>Werkt op Quest 3, mobiel en desktop.</p>
-        <div id="tips">
-          <ul>
-            <li>Quest: pak het scherm vast aan de randen om te verplaatsen, klik op de knop om te spelen.</li>
-            <li>Mobiel/desktop: tik/klik op het scherm om te spelen/pauzeren.</li>
-            <li>Mobiel/desktop: gebruik de knoppen onderin om het scherm te verplaatsen.</li>
-          </ul>
-        </div>
-        <div class="btn-row">
-          <button id="start-btn">Start</button>
-          <button id="enter-vr-btn" hidden>Enter VR</button>
-        </div>
-      </div>
-    </div>
-
-    <div id="hud" aria-label="Bediening">
-      <div id="hud-inner">
-        <div id="hud-row-main">
-          <div class="hud-group">
-            <button id="hud-play" class="hud-btn primary" type="button">Afspelen</button>
-            <button id="hud-reset" class="hud-btn" type="button">Reset positie</button>
-            <button id="hud-toggle" class="hud-btn" type="button">Minimaliseer</button>
-          </div>
-          <div class="hud-group hud-volume">
-            <span class="hud-label">Volume</span>
-            <input
-              id="volume"
-              type="range"
-              min="0"
-              max="1"
-              step="0.01"
-              value="1"
-              aria-label="Volume"
-            >
-          </div>
-        </div>
-        <div id="hud-row-move">
-          <div class="hud-group">
-            <button id="move-left" class="hud-btn" type="button">Links</button>
-            <button id="move-right" class="hud-btn" type="button">Rechts</button>
-            <button id="move-up" class="hud-btn" type="button">Omhoog</button>
-            <button id="move-down" class="hud-btn" type="button">Omlaag</button>
-            <button id="move-near" class="hud-btn" type="button">Dichterbij</button>
-            <button id="move-far" class="hud-btn" type="button">Verder</button>
-          </div>
-          <div id="hud-hint">
-            Sneltoetsen: Spatie (play/pauze), R (reset), pijlen/WASD (verplaats), Q/E (omhoog/omlaag).
-          </div>
-        </div>
-      </div>
+      <h1>Cinema Glass</h1>
+      <p>Pak het scherm vast aan de randen. Klik op de knop om te spelen.</p>
+      <button id="start-btn">Enter VR</button>
     </div>
 
     <a-scene>
       <a-assets>
         <img id="sky-texture" src="assets/foto.png">
         <audio id="ambient-src" src="assets/geluid.mp3"></audio>
-        <video
-          id="bios-video"
-          src="assets/video.mp4"
-          loop="true"
-          preload="auto"
-          playsinline
-          webkit-playsinline
-        ></video>
+        <video id="bios-video" src="assets/video.mp4" loop="true" preload="auto" playsinline webkit-playsinline></video>
       </a-assets>
 
       <a-sky src="#sky-texture" rotation="0 -90 0"></a-sky>
-      <a-sound
-        id="ambient-sound-entity"
-        src="#ambient-src"
-        autoplay="false"
-        loop="true"
-        volume="0.3"
-        position="0 2 0"
-      ></a-sound>
+      <a-sound id="ambient-sound-entity" src="#ambient-src" autoplay="false" loop="true" volume="0.3" position="0 2 0"></a-sound>
 
-      <a-entity id="cinema-rig" position="0 2.5 -5" drag-handler face-viewer>
-        <a-video id="screen" src="#bios-video" width="8" height="4.5" class="clickable"></a-video>
+      <a-entity id="cinema-rig" position="0 2.5 -5" drag-handler>
+        
+        <a-video src="#bios-video" width="8" height="4.5" class="clickable"></a-video>
 
-        <a-box
-          position="0 -2.6 0.1"
-          width="8"
-          height="0.8"
-          depth="0.05"
-          material="color: #ffffff; opacity: 0.15; transparent: true; metalness: 0.1; roughness: 0.2"
-          class="clickable"
-        ></a-box>
+        <a-box position="0 -2.6 0.1" 
+               width="8" height="0.8" depth="0.05"
+               material="color: #ffffff; opacity: 0.15; transparent: true; metalness: 0.1; roughness: 0.2"
+               class="clickable"> </a-box>
 
-        <a-cylinder
-          id="play-button"
-          position="0 -2.6 0.15"
-          rotation="90 0 0"
-          radius="0.3"
-          height="0.05"
-          material="color: white; opacity: 0.2; transparent: true"
-          class="clickable"
-        >
-          <a-entity
-            id="play-icon"
-            text="value: \u25B6; align: center; color: white; width: 4;"
-            position="0 -0.06 0"
-            rotation="-90 0 0"
-          ></a-entity>
+        <a-cylinder id="play-button"
+                    position="0 -2.6 0.15" 
+                    rotation="90 0 0"
+                    radius="0.3" height="0.05"
+                    material="color: white; opacity: 0.2; transparent: true"
+                    class="clickable">
+            
+            <a-entity id="play-icon"
+                      text="value: \u25B6; align: center; color: white; width: 4;"
+                      position="0 -0.06 0"
+                      rotation="-90 0 0">
+            </a-entity>
         </a-cylinder>
-      </a-entity>
 
-      <a-entity
-        oculus-touch-controls="hand: left"
-        laser-controls="hand: left"
-        raycaster="objects: .clickable; far: 20"
-      ></a-entity>
-      <a-entity
-        oculus-touch-controls="hand: right"
-        laser-controls="hand: right"
-        raycaster="objects: .clickable; far: 20"
-      ></a-entity>
-
+      </a-entity> <a-entity oculus-touch-controls="hand: left" laser-controls="hand: left" raycaster="objects: .clickable; far: 20"></a-entity>
+      <a-entity oculus-touch-controls="hand: right" laser-controls="hand: right" raycaster="objects: .clickable; far: 20"></a-entity>
+      
       <a-entity camera look-controls position="0 1.6 0">
-        <a-cursor
-          color="#00f2fe"
-          cursor="rayOrigin: mouse; fuse: false"
-          raycaster="objects: .clickable; far: 30"
-        ></a-cursor>
+         <a-cursor color="#00f2fe" raycaster="objects: .clickable"></a-cursor>
       </a-entity>
+
     </a-scene>
   </body>
 </html>
