@@ -106,7 +106,7 @@ export default function App() {
           </XROrigin>
         </XR>
 
-        {!entered && (
+        {!xrSupported && (
           <>
             <OrbitControls target={[0, 1.5, -2]} />
             <Environment preset="city" />

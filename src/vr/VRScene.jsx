@@ -68,7 +68,7 @@ function FollowCameraGroup({ distance = 0.85, y = -0.35, children }) {
   return <group ref={ref}>{children}</group>
 }
 
-function Window({ visible, initialPosition, title, onMinimize, children, width = 1.2, height = 0.8 }) {
+function Window({ visible, initialPosition, title, onMinimize, children, width = 1200, height = 800 }) {
   if (!visible) return null
   return (
     <group position={initialPosition}>
@@ -187,8 +187,8 @@ export default function VRScene() {
       <FollowCameraGroup>
         <Root
           pixelSize={0.0015}
-          width={0.62}
-          height={0.13}
+          width={620}
+          height={130}
           backgroundColor="#0b1620"
           backgroundOpacity={0.72}
           borderRadius={999}
@@ -246,8 +246,8 @@ export default function VRScene() {
         initialPosition={[0, 1.55, -1.2]}
         title="Menu"
         onMinimize={() => setMenuOpen(false)}
-        width={0.95}
-        height={0.62}
+        width={950}
+        height={620}
       >
         <Container width="100%" gap={10}>
           <Container
@@ -297,8 +297,8 @@ export default function VRScene() {
         initialPosition={[0, 1.45, -2]}
         title="Video Player"
         onMinimize={() => setVideoOpen(false)}
-        width={1.55}
-        height={1.05}
+        width={1550}
+        height={1050}
       >
         <Container width="100%" gap={12}>
           <Video
@@ -349,8 +349,8 @@ export default function VRScene() {
         initialPosition={[0.85, 1.45, -1.75]}
         title="360 Gallery"
         onMinimize={() => setGalleryOpen(false)}
-        width={1.2}
-        height={0.95}
+        width={1200}
+        height={950}
       >
         <Container width="100%" gap={12}>
           <Container width="100%" flexDirection="row" alignItems="center" justifyContent="space-between">
