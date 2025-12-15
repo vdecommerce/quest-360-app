@@ -28,8 +28,8 @@
           this.isDragging = false;
         },
         onMouseDown: function (evt) {
-          // Check of we de Play-knop raken, dan NIET slepen
-          if (evt.target.id === "play-button" || evt.target.parentNode.id === "play-button") return;
+           // Check of we een knop raken, dan NIET slepen
+           if (evt.target.id && evt.target.id.endsWith('-button') || evt.target.parentNode.id && evt.target.parentNode.id.endsWith('-button')) return;
 
           var controller = evt.detail.cursorEl;
           if (controller) {
@@ -54,7 +54,14 @@
         const ambientSound = document.querySelector('#ambient-sound-entity');
         const playButton = document.querySelector('#play-button');
         const playIcon = document.querySelector('#play-icon');
-        
+        const stopButton = document.querySelector('#stop-button');
+        const volDownButton = document.querySelector('#vol-down-button');
+        const volUpButton = document.querySelector('#vol-up-button');
+        const minimizeButton = document.querySelector('#minimize-button');
+        const restoreButton = document.querySelector('#restore-button');
+        const videoScreen = document.querySelector('#cinema-rig a-video');
+        const controlsBar = document.querySelector('#cinema-rig a-box');
+
         let isPlaying = false;
 
         startBtn.addEventListener('click', function() {
@@ -82,10 +89,83 @@
 
         // Hover effectjes voor de knop
         playButton.addEventListener('mouseenter', function() {
-          if(!isPlaying) this.setAttribute('material', 'opacity: 0.5');
+           if(!isPlaying) this.setAttribute('material', 'opacity: 0.5');
         });
         playButton.addEventListener('mouseleave', function() {
-           if(!isPlaying) this.setAttribute('material', 'opacity: 0.2');
+            if(!isPlaying) this.setAttribute('material', 'opacity: 0.2');
+        });
+
+        // Stop Button
+        stopButton.addEventListener('click', function() {
+          videoElement.pause();
+          videoElement.currentTime = 0;
+          playIcon.setAttribute('text', 'value: \u25B6');
+          playButton.setAttribute('material', 'color: white; opacity: 0.2');
+          isPlaying = false;
+        });
+        stopButton.addEventListener('mouseenter', function() {
+          this.setAttribute('material', 'opacity: 0.5');
+        });
+        stopButton.addEventListener('mouseleave', function() {
+          this.setAttribute('material', 'opacity: 0.2');
+        });
+
+        // Volume Down
+        volDownButton.addEventListener('click', function() {
+          videoElement.volume = Math.max(0, videoElement.volume - 0.1);
+        });
+        volDownButton.addEventListener('mouseenter', function() {
+          this.setAttribute('material', 'opacity: 0.5');
+        });
+        volDownButton.addEventListener('mouseleave', function() {
+          this.setAttribute('material', 'opacity: 0.2');
+        });
+
+        // Volume Up
+        volUpButton.addEventListener('click', function() {
+          videoElement.volume = Math.min(1, videoElement.volume + 0.1);
+        });
+        volUpButton.addEventListener('mouseenter', function() {
+          this.setAttribute('material', 'opacity: 0.5');
+        });
+        volUpButton.addEventListener('mouseleave', function() {
+          this.setAttribute('material', 'opacity: 0.2');
+        });
+
+        // Minimize
+        minimizeButton.addEventListener('click', function() {
+          videoScreen.setAttribute('visible', false);
+          controlsBar.setAttribute('visible', false);
+          stopButton.setAttribute('visible', false);
+          playButton.setAttribute('visible', false);
+          volDownButton.setAttribute('visible', false);
+          volUpButton.setAttribute('visible', false);
+          minimizeButton.setAttribute('visible', false);
+          restoreButton.setAttribute('visible', true);
+        });
+        minimizeButton.addEventListener('mouseenter', function() {
+          this.setAttribute('material', 'opacity: 0.5');
+        });
+        minimizeButton.addEventListener('mouseleave', function() {
+          this.setAttribute('material', 'opacity: 0.2');
+        });
+
+        // Restore
+        restoreButton.addEventListener('click', function() {
+          videoScreen.setAttribute('visible', true);
+          controlsBar.setAttribute('visible', true);
+          stopButton.setAttribute('visible', true);
+          playButton.setAttribute('visible', true);
+          volDownButton.setAttribute('visible', true);
+          volUpButton.setAttribute('visible', true);
+          minimizeButton.setAttribute('visible', true);
+          restoreButton.setAttribute('visible', false);
+        });
+        restoreButton.addEventListener('mouseenter', function() {
+          this.setAttribute('material', 'opacity: 0.5');
+        });
+        restoreButton.addEventListener('mouseleave', function() {
+          this.setAttribute('material', 'opacity: 0.2');
         });
       });
     </script>
@@ -118,14 +198,80 @@
                class="clickable"> </a-box>
 
         <a-cylinder id="play-button"
-                    position="0 -2.6 0.15" 
+                    position="0 -2.6 0.15"
                     rotation="90 0 0"
                     radius="0.3" height="0.05"
                     material="color: white; opacity: 0.2; transparent: true"
                     class="clickable">
-            
+
             <a-entity id="play-icon"
                       text="value: \u25B6; align: center; color: white; width: 4;"
+                      position="0 -0.06 0"
+                      rotation="-90 0 0">
+            </a-entity>
+        </a-cylinder>
+
+        <!-- Stop Button -->
+        <a-cylinder id="stop-button"
+                    position="-1.2 -2.6 0.15"
+                    rotation="90 0 0"
+                    radius="0.3" height="0.05"
+                    material="color: white; opacity: 0.2; transparent: true"
+                    class="clickable">
+            <a-entity text="value: \u25A0; align: center; color: white; width: 4;"
+                      position="0 -0.06 0"
+                      rotation="-90 0 0">
+            </a-entity>
+        </a-cylinder>
+
+        <!-- Volume Down -->
+        <a-cylinder id="vol-down-button"
+                    position="0.8 -2.6 0.15"
+                    rotation="90 0 0"
+                    radius="0.3" height="0.05"
+                    material="color: white; opacity: 0.2; transparent: true"
+                    class="clickable">
+            <a-entity text="value: -; align: center; color: white; width: 4;"
+                      position="0 -0.06 0"
+                      rotation="-90 0 0">
+            </a-entity>
+        </a-cylinder>
+
+        <!-- Volume Up -->
+        <a-cylinder id="vol-up-button"
+                    position="1.6 -2.6 0.15"
+                    rotation="90 0 0"
+                    radius="0.3" height="0.05"
+                    material="color: white; opacity: 0.2; transparent: true"
+                    class="clickable">
+            <a-entity text="value: +; align: center; color: white; width: 4;"
+                      position="0 -0.06 0"
+                      rotation="-90 0 0">
+            </a-entity>
+        </a-cylinder>
+
+        <!-- Minimize Button -->
+        <a-cylinder id="minimize-button"
+                    position="2.4 -2.6 0.15"
+                    rotation="90 0 0"
+                    radius="0.3" height="0.05"
+                    material="color: white; opacity: 0.2; transparent: true"
+                    class="clickable">
+            <a-entity text="value: _; align: center; color: white; width: 4;"
+                      position="0 -0.06 0"
+                      rotation="-90 0 0">
+            </a-entity>
+        </a-cylinder>
+
+        <!-- Restore Button -->
+        <a-cylinder id="restore-button"
+                    position="0 -2.6 0.15"
+                    rotation="90 0 0"
+                    radius="0.3" height="0.05"
+                    material="color: white; opacity: 0.2; transparent: true"
+                    class="clickable"
+                    visible="false">
+            <a-entity text="value: \u25A1; align: center; color: white; width: 4;"
                       position="0 -0.06 0"
                       rotation="-90 0 0">
             </a-entity>
