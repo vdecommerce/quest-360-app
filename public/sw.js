@@ -5,7 +5,8 @@ const CORE_ASSETS = [
   "./index.html",
   "./manifest.webmanifest",
   "./assets/pwa-icon.svg",
-  "./assets/panos.json"
+  "./assets/panos.json",
+  "./assets/videos.json"
 ];
 
 self.addEventListener("install", (event) => {

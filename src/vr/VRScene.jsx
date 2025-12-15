@@ -4,32 +4,42 @@ import { useFrame, useThree } from '@react-three/fiber'
 import { useTexture } from '@react-three/drei'
 import { Root, Container, Text, Image, Video } from '@react-three/uikit'
 
-const UI_PIXEL_SIZE = 0.0006
+const UI_PIXEL_SIZE = 0.0013
 
-function usePanoList() {
+function useAssetList(pathname, ext) {
   const [items, setItems] = useState([])
 
   useEffect(() => {
     let canceled = false
     ;(async () => {
       try {
-        const res = await fetch('/assets/panos.json', { cache: 'no-cache' })
+        const res = await fetch(pathname, { cache: 'no-cache' })
         const list = await res.json()
         if (!Array.isArray(list)) return
         const normalized = list
-          .filter((v) => typeof v === 'string' && v.toLowerCase().endsWith('.png'))
+          .filter((v) => typeof v === 'string' && v.toLowerCase().endsWith(ext))
           .map((v) => (v.startsWith('/assets/') ? v : v.startsWith('assets/') ? `/${v}` : `/assets/${v}`))
         if (!canceled) setItems(normalized)
       } catch (e) {
-        if (!canceled) setItems(['/assets/foto.png'])
+        if (!canceled) setItems([])
       }
     })()
     return () => {
       canceled = true
     }
-  }, [])
+  }, [pathname, ext])
 
   return items
+}
+
+function usePanoList() {
+  const items = useAssetList('/assets/panos.json', '.png')
+  return items.length ? items : ['/assets/foto.png']
+}
+
+function useVideoList() {
+  const items = useAssetList('/assets/videos.json', '.mp4')
+  return items.length ? items : ['/assets/video.mp4']
 }
 
 function PanoSphere({ src }) {
@@ -70,10 +80,59 @@ function FollowCameraGroup({ distance = 0.85, y = -0.35, children }) {
   return <group ref={ref}>{children}</group>
 }
 
-function Window({ visible, initialPosition, title, onMinimize, children, width = 1200, height = 800 }) {
+function Window({
+  visible,
+  initialPosition,
+  title,
+  onMinimize,
+  children,
+  width = 1200,
+  height = 800
+}) {
+  const groupRef = useRef()
+  const dragging = useRef(false)
+  const dragPointerId = useRef(null)
+  const offset = useMemo(() => new THREE.Vector3(), [])
+  const tmpWorld = useMemo(() => new THREE.Vector3(), [])
+  const tmpLocal = useMemo(() => new THREE.Vector3(), [])
+
+  const onDown = useCallback((e) => {
+    e.stopPropagation()
+    if (!groupRef.current) return
+    dragging.current = true
+    dragPointerId.current = e.pointerId
+    e.target?.setPointerCapture?.(e.pointerId)
+
+    groupRef.current.getWorldPosition(tmpWorld)
+    offset.copy(tmpWorld).sub(e.point)
+  }, [offset, tmpWorld])
+
+  const onMove = useCallback((e) => {
+    if (!dragging.current) return
+    if (dragPointerId.current != null && e.pointerId !== dragPointerId.current) return
+    if (!groupRef.current) return
+
+    tmpWorld.copy(e.point).add(offset)
+    if (groupRef.current.parent) {
+      tmpLocal.copy(tmpWorld)
+      groupRef.current.parent.worldToLocal(tmpLocal)
+      groupRef.current.position.copy(tmpLocal)
+    } else {
+      groupRef.current.position.copy(tmpWorld)
+    }
+  }, [offset, tmpLocal, tmpWorld])
+
+  const onUp = useCallback((e) => {
+    if (dragPointerId.current != null && e.pointerId !== dragPointerId.current) return
+    dragging.current = false
+    dragPointerId.current = null
+    e.target?.releasePointerCapture?.(e.pointerId)
+  }, [])
+
   if (!visible) return null
+
   return (
-    <group position={initialPosition}>
+    <group ref={groupRef} position={initialPosition}>
       <Root
         pixelSize={UI_PIXEL_SIZE}
         width={width}
@@ -94,8 +153,12 @@ function Window({ visible, initialPosition, title, onMinimize, children, width =
           backgroundOpacity={0.35}
           borderRadius={14}
           paddingX={16}
+          onPointerDown={onDown}
+          onPointerMove={onMove}
+          onPointerUp={onUp}
+          onPointerCancel={onUp}
         >
-          <Text fontSize={20} color="#EAF6FF">
+          <Text fontSize={24} color="#EAF6FF">
             {title}
           </Text>
           <Container
@@ -109,7 +172,7 @@ function Window({ visible, initialPosition, title, onMinimize, children, width =
             borderRadius={999}
           >
             <Text fontSize={20} color="#FFFFFF">
-              —
+              X
             </Text>
           </Container>
         </Container>
@@ -123,6 +186,8 @@ function Window({ visible, initialPosition, title, onMinimize, children, width =
 export default function VRScene() {
   const panos = usePanoList()
   const [panoIndex, setPanoIndex] = useState(() => Number.parseInt(localStorage.getItem('panoIndex') || '0', 10) || 0)
+  const videos = useVideoList()
+  const [videoIndex, setVideoIndex] = useState(() => Number.parseInt(localStorage.getItem('videoIndex') || '0', 10) || 0)
 
   const [menuOpen, setMenuOpen] = useState(false)
   const [videoOpen, setVideoOpen] = useState(true)
@@ -130,12 +195,19 @@ export default function VRScene() {
   const [galleryPage, setGalleryPage] = useState(0)
 
   const src = panos.length ? panos[(panoIndex % panos.length + panos.length) % panos.length] : '/assets/foto.png'
+  const videoSrc = videos.length ? videos[(videoIndex % videos.length + videos.length) % videos.length] : '/assets/video.mp4'
 
   useEffect(() => {
     if (!panos.length) return
     const idx = (panoIndex % panos.length + panos.length) % panos.length
     localStorage.setItem('panoIndex', String(idx))
   }, [panoIndex, panos.length])
+
+  useEffect(() => {
+    if (!videos.length) return
+    const idx = (videoIndex % videos.length + videos.length) % videos.length
+    localStorage.setItem('videoIndex', String(idx))
+  }, [videoIndex, videos.length])
 
   const openVideo = useCallback(() => {
     setVideoOpen(true)
@@ -149,6 +221,31 @@ export default function VRScene() {
 
   const videoRef = useRef(null)
   const [playing, setPlaying] = useState(false)
+  const [muted, setMuted] = useState(true)
+
+  useEffect(() => {
+    const prime = async () => {
+      const el = videoRef.current?.element
+      if (!el) return
+      try {
+        el.muted = true
+        await el.play()
+        el.pause()
+        el.currentTime = 0
+      } catch (e) {}
+    }
+    window.addEventListener('pointerdown', prime, { once: true })
+    return () => window.removeEventListener('pointerdown', prime)
+  }, [])
+
+  useEffect(() => {
+    const el = videoRef.current?.element
+    if (!el) return
+    el.pause()
+    el.currentTime = 0
+    setPlaying(false)
+    setMuted(true)
+  }, [videoSrc])
 
   const togglePlay = useCallback(async () => {
     const videoEl = videoRef.current?.element
@@ -158,12 +255,22 @@ export default function VRScene() {
         videoEl.pause()
         setPlaying(false)
       } else {
+        setMuted(false)
         videoEl.muted = false
         await videoEl.play()
         setPlaying(true)
       }
     } catch (e) {}
   }, [playing])
+
+  const nextVideo = useCallback(() => {
+    if (!videos.length) return
+    setVideoIndex((i) => (i + 1) % videos.length)
+  }, [videos.length])
+  const prevVideo = useCallback(() => {
+    if (!videos.length) return
+    setVideoIndex((i) => (i - 1 + videos.length) % videos.length)
+  }, [videos.length])
 
   const nextPano = useCallback(() => {
     if (!panos.length) return
@@ -189,8 +296,8 @@ export default function VRScene() {
       <FollowCameraGroup>
         <Root
           pixelSize={UI_PIXEL_SIZE}
-          width={620}
-          height={130}
+          width={520}
+          height={110}
           backgroundColor="#0b1620"
           backgroundOpacity={0.72}
           borderRadius={999}
@@ -248,8 +355,8 @@ export default function VRScene() {
         initialPosition={[0, 1.55, -1.2]}
         title="Menu"
         onMinimize={() => setMenuOpen(false)}
-        width={950}
-        height={620}
+        width={700}
+        height={520}
       >
         <Container width="100%" gap={10}>
           <Container
@@ -299,19 +406,19 @@ export default function VRScene() {
         initialPosition={[0, 1.45, -2]}
         title="Video Player"
         onMinimize={() => setVideoOpen(false)}
-        width={1550}
-        height={1050}
+        width={1100}
+        height={760}
       >
         <Container width="100%" gap={12}>
           <Video
             ref={videoRef}
-            src="/assets/video.mp4"
+            src={videoSrc}
+            muted={muted}
             loop
-            muted
             playsInline
             preload="auto"
             width="100%"
-            height={720}
+            height={520}
             borderRadius={16}
           />
 
@@ -328,19 +435,45 @@ export default function VRScene() {
             >
               <Text fontSize={18} color="#fff">{playing ? 'Pause' : 'Play'}</Text>
             </Container>
-            <Container
-              width="100%"
-              height={44}
-              backgroundColor="#ffffff"
-              backgroundOpacity={0.08}
-              borderRadius={14}
-              paddingX={12}
-              alignItems="center"
-              justifyContent="center"
-            >
-              <Text fontSize={14} color="#A9D7FF">
-                {src.replace('/assets/', '')}
-              </Text>
+            <Container flexDirection="row" gap={8} alignItems="center">
+              <Container
+                onClick={prevVideo}
+                width={44}
+                height={44}
+                backgroundColor="#000000"
+                backgroundOpacity={0.55}
+                borderRadius={999}
+                alignItems="center"
+                justifyContent="center"
+              >
+                <Text fontSize={18} color="#fff">{'<'}</Text>
+              </Container>
+              <Container
+                onClick={nextVideo}
+                width={44}
+                height={44}
+                backgroundColor="#000000"
+                backgroundOpacity={0.55}
+                borderRadius={999}
+                alignItems="center"
+                justifyContent="center"
+              >
+                <Text fontSize={18} color="#fff">{'>'}</Text>
+              </Container>
+              <Container
+                width={520}
+                height={44}
+                backgroundColor="#ffffff"
+                backgroundOpacity={0.08}
+                borderRadius={14}
+                paddingX={12}
+                alignItems="center"
+                justifyContent="center"
+              >
+                <Text fontSize={14} color="#A9D7FF">
+                  {videoSrc.replace('/assets/', '')}
+                </Text>
+              </Container>
             </Container>
           </Container>
         </Container>
@@ -351,8 +484,8 @@ export default function VRScene() {
         initialPosition={[0.85, 1.45, -1.75]}
         title="360 Gallery"
         onMinimize={() => setGalleryOpen(false)}
-        width={1200}
-        height={950}
+        width={1000}
+        height={760}
       >
         <Container width="100%" gap={12}>
           <Container width="100%" flexDirection="row" alignItems="center" justifyContent="space-between">
