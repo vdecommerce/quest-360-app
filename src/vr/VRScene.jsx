@@ -80,6 +80,14 @@ function FollowCameraGroup({ distance = 0.85, y = -0.35, children }) {
   return <group ref={ref}>{children}</group>
 }
 
+function yawToFace(camera, worldPos) {
+  const camPos = new THREE.Vector3()
+  camera.getWorldPosition(camPos)
+  const dx = camPos.x - worldPos.x
+  const dz = camPos.z - worldPos.z
+  return Math.atan2(dx, dz)
+}
+
 function Window({
   visible,
   initialPosition,
@@ -92,6 +100,7 @@ function Window({
   const groupRef = useRef()
   const dragging = useRef(false)
   const dragPointerId = useRef(null)
+  const { camera } = useThree()
   const offset = useMemo(() => new THREE.Vector3(), [])
   const tmpWorld = useMemo(() => new THREE.Vector3(), [])
   const tmpLocal = useMemo(() => new THREE.Vector3(), [])
@@ -105,6 +114,7 @@ function Window({
 
     groupRef.current.getWorldPosition(tmpWorld)
     offset.copy(tmpWorld).sub(e.point)
+    groupRef.current.rotation.set(0, yawToFace(camera, tmpWorld), 0)
   }, [offset, tmpWorld])
 
   const onMove = useCallback((e) => {
@@ -120,6 +130,9 @@ function Window({
     } else {
       groupRef.current.position.copy(tmpWorld)
     }
+
+    groupRef.current.getWorldPosition(tmpWorld)
+    groupRef.current.rotation.set(0, yawToFace(camera, tmpWorld), 0)
   }, [offset, tmpLocal, tmpWorld])
 
   const onUp = useCallback((e) => {
@@ -184,15 +197,17 @@ function Window({
 }
 
 export default function VRScene() {
+  const { camera } = useThree()
   const panos = usePanoList()
   const [panoIndex, setPanoIndex] = useState(() => Number.parseInt(localStorage.getItem('panoIndex') || '0', 10) || 0)
   const videos = useVideoList()
   const [videoIndex, setVideoIndex] = useState(() => Number.parseInt(localStorage.getItem('videoIndex') || '0', 10) || 0)
 
-  const [menuOpen, setMenuOpen] = useState(false)
   const [videoOpen, setVideoOpen] = useState(true)
+  const [videoLibraryOpen, setVideoLibraryOpen] = useState(false)
   const [galleryOpen, setGalleryOpen] = useState(false)
   const [galleryPage, setGalleryPage] = useState(0)
+  const [videoPage, setVideoPage] = useState(0)
 
   const src = panos.length ? panos[(panoIndex % panos.length + panos.length) % panos.length] : '/assets/foto.png'
   const videoSrc = videos.length ? videos[(videoIndex % videos.length + videos.length) % videos.length] : '/assets/video.mp4'
@@ -211,13 +226,21 @@ export default function VRScene() {
 
   const openVideo = useCallback(() => {
     setVideoOpen(true)
-    setMenuOpen(false)
   }, [])
   const openGallery = useCallback(() => {
     setGalleryOpen(true)
-    setMenuOpen(false)
     if (panos.length) setGalleryPage(Math.floor(panoIndex / 6))
   }, [panos.length, panoIndex])
+  const openVideoLibrary = useCallback(() => {
+    setVideoLibraryOpen(true)
+    if (videos.length) setVideoPage(Math.floor(videoIndex / 6))
+  }, [videos.length, videoIndex])
+
+  const closeAll = useCallback(() => {
+    setVideoOpen(false)
+    setVideoLibraryOpen(false)
+    setGalleryOpen(false)
+  }, [])
 
   const videoRef = useRef(null)
   const [playing, setPlaying] = useState(false)
@@ -287,119 +310,96 @@ export default function VRScene() {
   const pageStart = safePage * pageSize
   const pageItems = panos.slice(pageStart, pageStart + pageSize)
 
+  const videoMaxPage = Math.max(1, Math.ceil(videos.length / pageSize))
+  const videoSafePage = Math.min(videoMaxPage - 1, Math.max(0, videoPage))
+  const videoStart = videoSafePage * pageSize
+  const videoItems = videos.slice(videoStart, videoStart + pageSize)
+
+  const dockRef = useRef()
+  const dockDragging = useRef(false)
+  const dockPointerId = useRef(null)
+  const dockOffset = useMemo(() => new THREE.Vector3(), [])
+  const dockTmpWorld = useMemo(() => new THREE.Vector3(), [])
+  const dockTmpLocal = useMemo(() => new THREE.Vector3(), [])
+
+  useEffect(() => {
+    if (!dockRef.current) return
+    const camPos = new THREE.Vector3()
+    const camDir = new THREE.Vector3()
+    camera.getWorldPosition(camPos)
+    camera.getWorldDirection(camDir)
+    const targetPos = camPos.clone().add(camDir.multiplyScalar(1.0))
+    targetPos.y = camPos.y - 0.55
+    dockRef.current.position.copy(targetPos)
+    dockRef.current.rotation.set(0, yawToFace(camera, targetPos), 0)
+  }, [])
+
+  const dockDown = useCallback((e) => {
+    e.stopPropagation()
+    if (!dockRef.current) return
+    dockDragging.current = true
+    dockPointerId.current = e.pointerId
+    e.target?.setPointerCapture?.(e.pointerId)
+    dockRef.current.getWorldPosition(dockTmpWorld)
+    dockOffset.copy(dockTmpWorld).sub(e.point)
+  }, [dockOffset, dockTmpWorld])
+
+  const dockMove = useCallback((e) => {
+    if (!dockDragging.current) return
+    if (dockPointerId.current != null && e.pointerId !== dockPointerId.current) return
+    if (!dockRef.current) return
+    dockTmpWorld.copy(e.point).add(dockOffset)
+    if (dockRef.current.parent) {
+      dockTmpLocal.copy(dockTmpWorld)
+      dockRef.current.parent.worldToLocal(dockTmpLocal)
+      dockRef.current.position.copy(dockTmpLocal)
+    } else {
+      dockRef.current.position.copy(dockTmpWorld)
+    }
+    dockRef.current.getWorldPosition(dockTmpWorld)
+    dockRef.current.rotation.set(0, yawToFace(camera, dockTmpWorld), 0)
+  }, [dockOffset, dockTmpLocal, dockTmpWorld])
+
+  const dockUp = useCallback((e) => {
+    if (dockPointerId.current != null && e.pointerId !== dockPointerId.current) return
+    dockDragging.current = false
+    dockPointerId.current = null
+    e.target?.releasePointerCapture?.(e.pointerId)
+  }, [])
+
   return (
     <>
       <Suspense fallback={null}>
         <PanoSphere src={src} />
       </Suspense>
 
-      <FollowCameraGroup>
+      <group ref={dockRef}>
         <Root
           pixelSize={UI_PIXEL_SIZE}
-          width={520}
-          height={110}
+          width={860}
+          height={120}
           backgroundColor="#0b1620"
           backgroundOpacity={0.72}
           borderRadius={999}
-          padding={10}
+          padding={12}
+          onPointerDown={dockDown}
+          onPointerMove={dockMove}
+          onPointerUp={dockUp}
+          onPointerCancel={dockUp}
         >
-          <Container width="100%" height="100%" flexDirection="row" alignItems="center" justifyContent="space-between" gap={10} paddingX={10}>
-            <Container
-              onClick={() => setMenuOpen((v) => !v)}
-              width={44}
-              height={44}
-              backgroundColor="#000000"
-              backgroundOpacity={0.55}
-              borderRadius={999}
-              alignItems="center"
-              justifyContent="center"
-            >
-              <Text fontSize={20} color="#fff">
-                M
-              </Text>
+          <Container width="100%" height="100%" flexDirection="row" alignItems="center" justifyContent="space-between" gap={12} paddingX={16}>
+            <Container onClick={openVideo} width={240} height={70} backgroundColor="#ffffff" backgroundOpacity={0.10} borderRadius={999} alignItems="center" justifyContent="center">
+              <Text fontSize={20} color="#EAF6FF">Video Player</Text>
             </Container>
-            <Container
-              onClick={openVideo}
-              width={44}
-              height={44}
-              backgroundColor="#000000"
-              backgroundOpacity={0.55}
-              borderRadius={999}
-              alignItems="center"
-              justifyContent="center"
-            >
-              <Text fontSize={18} color="#fff">
-                V
-              </Text>
+            <Container onClick={openGallery} width={240} height={70} backgroundColor="#ffffff" backgroundOpacity={0.10} borderRadius={999} alignItems="center" justifyContent="center">
+              <Text fontSize={20} color="#EAF6FF">360 Gallery</Text>
             </Container>
-            <Container
-              onClick={openGallery}
-              width={44}
-              height={44}
-              backgroundColor="#000000"
-              backgroundOpacity={0.55}
-              borderRadius={999}
-              alignItems="center"
-              justifyContent="center"
-            >
-              <Text fontSize={14} color="#fff">
-                360
-              </Text>
+            <Container onClick={closeAll} width={180} height={70} backgroundColor="#ffffff" backgroundOpacity={0.06} borderRadius={999} alignItems="center" justifyContent="center">
+              <Text fontSize={20} color="#A9D7FF">Close</Text>
             </Container>
           </Container>
         </Root>
-      </FollowCameraGroup>
-
-      <Window
-        visible={menuOpen}
-        initialPosition={[0, 1.55, -1.2]}
-        title="Menu"
-        onMinimize={() => setMenuOpen(false)}
-        width={700}
-        height={520}
-      >
-        <Container width="100%" gap={10}>
-          <Container
-            onClick={openVideo}
-            width="100%"
-            height={56}
-            backgroundColor="#ffffff"
-            backgroundOpacity={0.1}
-            borderRadius={14}
-            paddingX={16}
-            alignItems="center"
-            justifyContent="center"
-          >
-            <Text fontSize={18} color="#EAF6FF">Video Player</Text>
-          </Container>
-          <Container
-            onClick={openGallery}
-            width="100%"
-            height={56}
-            backgroundColor="#ffffff"
-            backgroundOpacity={0.1}
-            borderRadius={14}
-            paddingX={16}
-            alignItems="center"
-            justifyContent="center"
-          >
-            <Text fontSize={18} color="#EAF6FF">360 Gallery</Text>
-          </Container>
-          <Container
-            onClick={() => setMenuOpen(false)}
-            width="100%"
-            height={56}
-            backgroundColor="#ffffff"
-            backgroundOpacity={0.06}
-            borderRadius={14}
-            paddingX={16}
-            alignItems="center"
-            justifyContent="center"
-          >
-            <Text fontSize={18} color="#A9D7FF">Close</Text>
-          </Container>
-        </Container>
-      </Window>
+      </group>
 
       <Window
         visible={videoOpen}
@@ -434,6 +434,18 @@ export default function VRScene() {
               justifyContent="center"
             >
               <Text fontSize={18} color="#fff">{playing ? 'Pause' : 'Play'}</Text>
+            </Container>
+            <Container
+              onClick={openVideoLibrary}
+              width={140}
+              height={44}
+              backgroundColor="#ffffff"
+              backgroundOpacity={0.08}
+              borderRadius={14}
+              alignItems="center"
+              justifyContent="center"
+            >
+              <Text fontSize={16} color="#EAF6FF">Library</Text>
             </Container>
             <Container flexDirection="row" gap={8} alignItems="center">
               <Container
@@ -480,6 +492,86 @@ export default function VRScene() {
       </Window>
 
       <Window
+        visible={videoLibraryOpen}
+        initialPosition={[0.9, 1.45, -1.75]}
+        title="Video Library"
+        onMinimize={() => setVideoLibraryOpen(false)}
+        width={1000}
+        height={760}
+      >
+        <Container width="100%" gap={12}>
+          <Container width="100%" gap={10}>
+            {videoItems.map((p, i) => {
+              const absoluteIndex = videoStart + i
+              const selected = absoluteIndex === ((videoIndex % videos.length + videos.length) % videos.length)
+              return (
+                <Container
+                  key={p}
+                  onClick={() => {
+                    setVideoIndex(absoluteIndex)
+                    setVideoOpen(true)
+                  }}
+                  width="100%"
+                  height={84}
+                  flexDirection="row"
+                  alignItems="center"
+                  justifyContent="space-between"
+                  backgroundColor={selected ? '#00f2fe' : '#ffffff'}
+                  backgroundOpacity={selected ? 0.18 : 0.06}
+                  borderRadius={16}
+                  paddingX={14}
+                >
+                  <Container width="70%" gap={4}>
+                    <Text fontSize={18} color="#EAF6FF">{p.replace('/assets/', '')}</Text>
+                    <Text fontSize={14} color="#A9D7FF">MP4</Text>
+                  </Container>
+                  <Container width={120} height={60} backgroundColor="#000000" backgroundOpacity={0.35} borderRadius={12} alignItems="center" justifyContent="center">
+                    <Text fontSize={14} color="#A9D7FF">Preview</Text>
+                  </Container>
+                </Container>
+              )
+            })}
+          </Container>
+
+          <Container width="100%" flexDirection="row" alignItems="center" justifyContent="space-between">
+            <Container flexDirection="row" gap={8} alignItems="center">
+              <Container
+                onClick={() => setVideoPage((p) => Math.max(0, p - 1))}
+                width={44}
+                height={44}
+                backgroundColor="#000000"
+                backgroundOpacity={0.55}
+                borderRadius={999}
+                alignItems="center"
+                justifyContent="center"
+              >
+                <Text fontSize={18} color="#fff">
+                  {'<'}
+                </Text>
+              </Container>
+              <Container
+                onClick={() => setVideoPage((p) => Math.min(videoMaxPage - 1, p + 1))}
+                width={44}
+                height={44}
+                backgroundColor="#000000"
+                backgroundOpacity={0.55}
+                borderRadius={999}
+                alignItems="center"
+                justifyContent="center"
+              >
+                <Text fontSize={18} color="#fff">
+                  {'>'}
+                </Text>
+              </Container>
+              <Text fontSize={14} color="#A9D7FF">
+                Page {videoSafePage + 1}/{videoMaxPage}
+              </Text>
+            </Container>
+          </Container>
+        </Container>
+      </Window>
+
+      <Window
         visible={galleryOpen}
         initialPosition={[0.85, 1.45, -1.75]}
         title="360 Gallery"
@@ -488,13 +580,7 @@ export default function VRScene() {
         height={760}
       >
         <Container width="100%" gap={12}>
-          <Container width="100%" flexDirection="row" alignItems="center" justifyContent="space-between">
-            <Text fontSize={16} color="#EAF6FF">
-              {src.replace('/assets/', '')}
-            </Text>
-          </Container>
-
-          <Container width="100%" flexDirection="row" flexWrap="wrap" gap={10} justifyContent="space-between">
+          <Container width="100%" gap={10}>
             {pageItems.map((p, i) => {
               const selected = p === src
               const absoluteIndex = pageStart + i
@@ -502,14 +588,23 @@ export default function VRScene() {
                 <Container
                   key={p}
                   onClick={() => setPanoIndex(absoluteIndex)}
-                  width={170}
-                  height={96}
+                  width="100%"
+                  height={100}
+                  flexDirection="row"
+                  alignItems="center"
+                  justifyContent="space-between"
                   backgroundColor={selected ? '#00f2fe' : '#ffffff'}
-                  backgroundOpacity={selected ? 0.22 : 0.06}
-                  borderRadius={14}
-                  padding={6}
+                  backgroundOpacity={selected ? 0.18 : 0.06}
+                  borderRadius={16}
+                  paddingX={14}
                 >
-                  <Image src={p} width="100%" height="100%" borderRadius={12} />
+                  <Container width="70%" gap={4}>
+                    <Text fontSize={18} color="#EAF6FF">{p.replace('/assets/', '')}</Text>
+                    <Text fontSize={14} color="#A9D7FF">PNG • 360 pano</Text>
+                  </Container>
+                  <Container width={180} height={80} borderRadius={14} backgroundColor="#ffffff" backgroundOpacity={0.04} padding={6}>
+                    <Image src={p} width="100%" height="100%" borderRadius={10} />
+                  </Container>
                 </Container>
               )
             })}
