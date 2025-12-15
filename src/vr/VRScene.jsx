@@ -5,6 +5,7 @@ import { useTexture } from '@react-three/drei'
 import { Root, Container, Text, Image, Video } from '@react-three/uikit'
 
 const UI_PIXEL_SIZE = 0.0016
+const DOCK_DISTANCE = 2.0
 
 function useAssetList(pathname, ext) {
   const [items, setItems] = useState([])
@@ -86,6 +87,30 @@ function yawToFace(camera, worldPos) {
   const dx = camPos.x - worldPos.x
   const dz = camPos.z - worldPos.z
   return Math.atan2(dx, dz)
+}
+
+function clamp01(v) {
+  return Math.min(1, Math.max(0, v))
+}
+
+function formatTime(seconds) {
+  if (!Number.isFinite(seconds) || seconds < 0) return '0:00'
+  const m = Math.floor(seconds / 60)
+  const s = Math.floor(seconds % 60)
+  return `${m}:${String(s).padStart(2, '0')}`
+}
+
+function fileBaseName(p) {
+  const s = String(p || '')
+  const name = s.split('/').pop() || s
+  return name
+}
+
+function truncateMiddle(text, max) {
+  const s = String(text || '')
+  if (s.length <= max) return s
+  const keep = Math.max(4, Math.floor((max - 3) / 2))
+  return `${s.slice(0, keep)}...${s.slice(s.length - keep)}`
 }
 
 function UiButton({
@@ -240,10 +265,12 @@ export default function VRScene() {
   const [videoIndex, setVideoIndex] = useState(() => Number.parseInt(localStorage.getItem('videoIndex') || '0', 10) || 0)
 
   const [videoOpen, setVideoOpen] = useState(true)
-  const [videoLibraryOpen, setVideoLibraryOpen] = useState(false)
   const [galleryOpen, setGalleryOpen] = useState(false)
   const [galleryPage, setGalleryPage] = useState(0)
   const [videoPage, setVideoPage] = useState(0)
+  const [videoFullscreen, setVideoFullscreen] = useState(false)
+  const [openOrder, setOpenOrder] = useState([])
+  const [windowPositions, setWindowPositions] = useState({})
 
   const src = panos.length ? panos[(panoIndex % panos.length + panos.length) % panos.length] : '/assets/foto.png'
   const videoSrc = videos.length ? videos[(videoIndex % videos.length + videos.length) % videos.length] : '/assets/video.mp4'
@@ -267,20 +294,19 @@ export default function VRScene() {
     setGalleryOpen(true)
     if (panos.length) setGalleryPage(Math.floor(panoIndex / 6))
   }, [panos.length, panoIndex])
-  const openVideoLibrary = useCallback(() => {
-    setVideoLibraryOpen(true)
-    if (videos.length) setVideoPage(Math.floor(videoIndex / 6))
-  }, [videos.length, videoIndex])
 
   const closeAll = useCallback(() => {
     setVideoOpen(false)
-    setVideoLibraryOpen(false)
     setGalleryOpen(false)
+    setVideoFullscreen(false)
   }, [])
 
   const videoRef = useRef(null)
   const [playing, setPlaying] = useState(false)
   const [muted, setMuted] = useState(true)
+  const [progress, setProgress] = useState(0)
+  const [timeLabel, setTimeLabel] = useState('0:00 / 0:00')
+  const [videoReady, setVideoReady] = useState(false)
 
   useEffect(() => {
     const prime = async () => {
@@ -303,6 +329,7 @@ export default function VRScene() {
     el.currentTime = 0
     setPlaying(false)
     setMuted(true)
+    setVideoReady(false)
   }, [videoSrc])
 
   useEffect(() => {
@@ -317,6 +344,32 @@ export default function VRScene() {
         setPlaying(true)
       } catch (e) {}
     })()
+  }, [videoSrc])
+
+  useEffect(() => {
+    const el = videoRef.current?.element
+    if (!el) return
+    const tick = () => {
+      setVideoReady(el.readyState >= 2 && (el.videoWidth || 0) > 0)
+    }
+    const id = window.setInterval(tick, 250)
+    tick()
+    return () => window.clearInterval(id)
+  }, [videoSrc])
+
+  useEffect(() => {
+    const el = videoRef.current?.element
+    if (!el) return
+    const tick = () => {
+      const duration = el.duration || 0
+      const current = el.currentTime || 0
+      const p = duration > 0 ? current / duration : 0
+      setProgress(clamp01(p))
+      setTimeLabel(`${formatTime(current)} / ${formatTime(duration)}`)
+    }
+    const id = window.setInterval(tick, 125)
+    tick()
+    return () => window.clearInterval(id)
   }, [videoSrc])
 
   const togglePlay = useCallback(async () => {
@@ -385,11 +438,42 @@ export default function VRScene() {
     const camDir = new THREE.Vector3()
     camera.getWorldPosition(camPos)
     camera.getWorldDirection(camDir)
-    const targetPos = camPos.clone().add(camDir.multiplyScalar(1.0))
-    targetPos.y = camPos.y - 0.55
+    const targetPos = camPos.clone().add(camDir.multiplyScalar(DOCK_DISTANCE))
+    targetPos.y = camPos.y - 0.75
     dockRef.current.position.copy(targetPos)
     dockRef.current.rotation.set(0, yawToFace(camera, targetPos), 0)
   }, [])
+
+  const placeWindow = useCallback((key) => {
+    if (!dockRef.current) return
+    const dockWorld = new THREE.Vector3()
+    dockRef.current.getWorldPosition(dockWorld)
+    const yaw = yawToFace(camera, dockWorld)
+    const right = new THREE.Vector3(Math.sin(yaw + Math.PI / 2), 0, Math.cos(yaw + Math.PI / 2))
+
+    setOpenOrder((prev) => {
+      const next = prev.includes(key) ? prev : [...prev, key]
+      const slots = [0, -1, 1]
+      const mapping = {}
+      for (let i = 0; i < next.length; i++) {
+        const k = next[i]
+        const slot = slots[i] ?? (i - 1)
+        const p = dockWorld.clone()
+        p.y = dockWorld.y + 0.95
+        p.add(right.clone().multiplyScalar(slot * 0.85))
+        mapping[k] = { position: [p.x, p.y, p.z], yaw }
+      }
+      setWindowPositions(mapping)
+      return next
+    })
+  }, [])
+
+  useEffect(() => {
+    if (videoOpen) placeWindow('video')
+  }, [videoOpen])
+  useEffect(() => {
+    if (galleryOpen) placeWindow('gallery')
+  }, [galleryOpen])
 
   const dockDown = useCallback((e) => {
     e.stopPropagation()
@@ -445,8 +529,24 @@ export default function VRScene() {
           onPointerCancel={dockUp}
         >
           <Container width="100%" height="100%" flexDirection="row" alignItems="center" justifyContent="space-between" gap={12} paddingX={16}>
-            <UiButton label="Video Player" onClick={openVideo} width={240} height={70} />
-            <UiButton label="360 Gallery" onClick={openGallery} width={240} height={70} />
+            <UiButton
+              label="Video Player"
+              onClick={() => {
+                openVideo()
+                placeWindow('video')
+              }}
+              width={240}
+              height={70}
+            />
+            <UiButton
+              label="360 Gallery"
+              onClick={() => {
+                openGallery()
+                placeWindow('gallery')
+              }}
+              width={240}
+              height={70}
+            />
             <Container
               onClick={closeAll}
               width={180}
@@ -465,7 +565,7 @@ export default function VRScene() {
 
       <Window
         visible={videoOpen}
-        initialPosition={[0, 1.45, -2]}
+        initialPosition={windowPositions.video?.position ?? [0, 1.55, -2]}
         title="Video Player"
         onMinimize={() => setVideoOpen(false)}
         width={1100}
@@ -474,21 +574,80 @@ export default function VRScene() {
         <Container width="100%" gap={12}>
           <Container width="100%" flexDirection="row" alignItems="center" justifyContent="space-between">
             <Container width="70%" gap={4}>
-              <Text fontSize={18} color="#EAF6FF">{videoSrc.replace('/assets/', '')}</Text>
-              <Text fontSize={14} color="#A9D7FF">MP4 • Video</Text>
+              <Text fontSize={18} color="#EAF6FF">{truncateMiddle(fileBaseName(videoSrc), 42)}</Text>
+              <Text fontSize={14} color="#A9D7FF">{timeLabel}</Text>
             </Container>
-            <UiButton label="Library" onClick={openVideoLibrary} width={180} height={52} />
+            <UiButton label={videoFullscreen ? 'Exit Fullscreen' : 'Fullscreen'} onClick={() => setVideoFullscreen((v) => !v)} width={240} height={52} />
           </Container>
+
+          {!videoFullscreen && (
+            <Container width="100%" gap={10}>
+              <Container width="100%" flexDirection="row" alignItems="center" justifyContent="space-between">
+                <Text fontSize={16} color="#EAF6FF">Video Library</Text>
+                <Text fontSize={14} color="#A9D7FF">Page {videoSafePage + 1}/{videoMaxPage}</Text>
+              </Container>
+              <Container width="100%" gap={10}>
+                {videoItems.map((p, i) => {
+                  const absoluteIndex = videoStart + i
+                  const selected = absoluteIndex === ((videoIndex % videos.length + videos.length) % videos.length)
+                  return (
+                    <Container
+                      key={p}
+                      onClick={() => setVideoIndex(absoluteIndex)}
+                      width="100%"
+                      height={84}
+                      flexDirection="row"
+                      alignItems="center"
+                      justifyContent="space-between"
+                      backgroundColor={selected ? '#00f2fe' : '#ffffff'}
+                      backgroundOpacity={selected ? 0.18 : 0.06}
+                      borderRadius={16}
+                      paddingX={14}
+                    >
+                      <Container width="80%" gap={4}>
+                        <Text fontSize={18} color="#EAF6FF">{truncateMiddle(fileBaseName(p), 50)}</Text>
+                        <Text fontSize={14} color="#A9D7FF">MP4</Text>
+                      </Container>
+                      <Text fontSize={14} color="#A9D7FF">{selected ? 'Selected' : ''}</Text>
+                    </Container>
+                  )
+                })}
+              </Container>
+
+              <Container width="100%" flexDirection="row" alignItems="center" justifyContent="space-between">
+                <Container flexDirection="row" gap={10} alignItems="center">
+                  <UiIconButton label="<" onClick={() => setVideoPage((p) => Math.max(0, p - 1))} size={44} />
+                  <UiIconButton label=">" onClick={() => setVideoPage((p) => Math.min(videoMaxPage - 1, p + 1))} size={44} />
+                </Container>
+                <Text fontSize={14} color="#A9D7FF">Page {videoSafePage + 1}/{videoMaxPage}</Text>
+              </Container>
+            </Container>
+          )}
+
+          {!videoReady && (
+            <Container
+              width="100%"
+              height={48}
+              backgroundColor="#ffffff"
+              backgroundOpacity={0.06}
+              borderRadius={16}
+              alignItems="center"
+              justifyContent="center"
+            >
+              <Text fontSize={14} color="#A9D7FF">Video loading… (tap Play if it stays black)</Text>
+            </Container>
+          )}
 
           <Video
             ref={videoRef}
             src={videoSrc}
+            crossOrigin="anonymous"
             muted={muted}
             loop
             playsInline
             preload="auto"
             width="100%"
-            height={520}
+            height={videoFullscreen ? 600 : 360}
             borderRadius={16}
           />
 
@@ -496,77 +655,15 @@ export default function VRScene() {
             <UiButton label={playing ? 'Pause' : 'Play'} onClick={togglePlay} variant="secondary" width={160} height={52} />
             <UiButton label={muted ? 'Unmute' : 'Mute'} onClick={toggleMute} variant="secondary" width={180} height={52} />
             <Container width="100%" height={52} backgroundColor="#ffffff" backgroundOpacity={0.06} borderRadius={16} paddingX={14} alignItems="center" justifyContent="center">
-              <Text fontSize={14} color="#A9D7FF">Tip: sleep de titelbalk om te verplaatsen</Text>
+              <Text fontSize={14} color="#A9D7FF">Progress {Math.round(progress * 100)}%</Text>
             </Container>
-          </Container>
-        </Container>
-      </Window>
-
-      <Window
-        visible={videoLibraryOpen}
-        initialPosition={[0.9, 1.45, -1.75]}
-        title="Video Library"
-        onMinimize={() => setVideoLibraryOpen(false)}
-        width={1000}
-        height={760}
-      >
-        <Container width="100%" gap={12}>
-          <Container width="100%" flexDirection="row" alignItems="center" justifyContent="space-between">
-            <Container width="70%" gap={4}>
-              <Text fontSize={18} color="#EAF6FF">Select a video</Text>
-              <Text fontSize={14} color="#A9D7FF">Click a file to load it into the player</Text>
-            </Container>
-            <Container width="30%" alignItems="flex-end">
-              <Text fontSize={14} color="#A9D7FF">Page {videoSafePage + 1}/{videoMaxPage}</Text>
-            </Container>
-          </Container>
-
-          <Container width="100%" gap={10}>
-            {videoItems.map((p, i) => {
-              const absoluteIndex = videoStart + i
-              const selected = absoluteIndex === ((videoIndex % videos.length + videos.length) % videos.length)
-              return (
-                <Container
-                  key={p}
-                  onClick={() => {
-                    setVideoIndex(absoluteIndex)
-                    setVideoOpen(true)
-                  }}
-                  width="100%"
-                  height={84}
-                  flexDirection="row"
-                  alignItems="center"
-                  justifyContent="space-between"
-                  backgroundColor={selected ? '#00f2fe' : '#ffffff'}
-                  backgroundOpacity={selected ? 0.18 : 0.06}
-                  borderRadius={16}
-                  paddingX={14}
-                >
-                  <Container width="70%" gap={4}>
-                    <Text fontSize={18} color="#EAF6FF">{p.replace('/assets/', '')}</Text>
-                    <Text fontSize={14} color="#A9D7FF">MP4</Text>
-                  </Container>
-                  <Container width={120} height={60} backgroundColor="#000000" backgroundOpacity={0.35} borderRadius={12} alignItems="center" justifyContent="center">
-                    <Text fontSize={14} color="#A9D7FF">Preview</Text>
-                  </Container>
-                </Container>
-              )
-            })}
-          </Container>
-
-          <Container width="100%" flexDirection="row" alignItems="center" justifyContent="space-between">
-            <Container flexDirection="row" gap={10} alignItems="center">
-              <UiIconButton label="<" onClick={() => setVideoPage((p) => Math.max(0, p - 1))} size={44} />
-              <UiIconButton label=">" onClick={() => setVideoPage((p) => Math.min(videoMaxPage - 1, p + 1))} size={44} />
-            </Container>
-            <Text fontSize={14} color="#A9D7FF">Page {videoSafePage + 1}/{videoMaxPage}</Text>
           </Container>
         </Container>
       </Window>
 
       <Window
         visible={galleryOpen}
-        initialPosition={[0.85, 1.45, -1.75]}
+        initialPosition={windowPositions.gallery?.position ?? [0.85, 1.55, -2]}
         title="360 Gallery"
         onMinimize={() => setGalleryOpen(false)}
         width={1000}
@@ -576,7 +673,7 @@ export default function VRScene() {
           <Container width="100%" flexDirection="row" alignItems="center" justifyContent="space-between">
             <Container width="70%" gap={4}>
               <Text fontSize={18} color="#EAF6FF">Select a 360 image</Text>
-              <Text fontSize={14} color="#A9D7FF">{src.replace('/assets/', '')}</Text>
+              <Text fontSize={14} color="#A9D7FF">{truncateMiddle(fileBaseName(src), 46)}</Text>
             </Container>
             <Container width="30%" alignItems="flex-end">
               <Text fontSize={14} color="#A9D7FF">Page {safePage + 1}/{maxPage}</Text>
@@ -592,7 +689,7 @@ export default function VRScene() {
                   key={p}
                   onClick={() => setPanoIndex(absoluteIndex)}
                   width="100%"
-                  height={100}
+                  height={104}
                   flexDirection="row"
                   alignItems="center"
                   justifyContent="space-between"
@@ -600,13 +697,25 @@ export default function VRScene() {
                   backgroundOpacity={selected ? 0.18 : 0.06}
                   borderRadius={16}
                   paddingX={14}
+                  paddingY={10}
+                  gap={14}
                 >
-                  <Container width="70%" gap={4}>
-                    <Text fontSize={18} color="#EAF6FF">{p.replace('/assets/', '')}</Text>
-                    <Text fontSize={14} color="#A9D7FF">PNG • 360 pano</Text>
-                  </Container>
-                  <Container width={180} height={80} borderRadius={14} backgroundColor="#ffffff" backgroundOpacity={0.04} padding={6}>
+                  <Container
+                    width={200}
+                    height={84}
+                    borderRadius={14}
+                    backgroundColor="#ffffff"
+                    backgroundOpacity={0.04}
+                    padding={6}
+                  >
                     <Image src={p} width="100%" height="100%" borderRadius={10} />
+                  </Container>
+                  <Container width="100%" gap={6}>
+                    <Text fontSize={18} color="#EAF6FF">{truncateMiddle(fileBaseName(p), 56)}</Text>
+                    <Text fontSize={14} color="#A9D7FF">PNG - 360 pano</Text>
+                  </Container>
+                  <Container width={110} alignItems="flex-end">
+                    <Text fontSize={14} color="#A9D7FF">{selected ? 'Selected' : ''}</Text>
                   </Container>
                 </Container>
               )
