@@ -441,6 +441,8 @@ export default function VRScene() {
   const dockTmpLocal = useMemo(() => new THREE.Vector3(), [])
   const camPos = useMemo(() => new THREE.Vector3(), [])
   const camDir = useMemo(() => new THREE.Vector3(), [])
+  const savedDockPosition = useRef(new THREE.Vector3())
+  const savedDockRotation = useRef(new THREE.Euler())
 
   const placeDockAtCamera = useCallback(() => {
     if (!dockRef.current) return
@@ -453,6 +455,8 @@ export default function VRScene() {
     targetPos.y = camPos.y - 0.75
     dockRef.current.position.copy(targetPos)
     dockRef.current.rotation.set(0, yawToFace(camera, targetPos), 0)
+    savedDockPosition.current.copy(targetPos)
+    savedDockRotation.current.set(0, yawToFace(camera, targetPos), 0)
     dockPlaced.current = true
   }, [camDir, camPos])
 
@@ -561,6 +565,13 @@ export default function VRScene() {
     wasPresentingRef.current = isPresenting
   })
 
+  useEffect(() => {
+    if (dockRef.current && !cinemaMode && dockPlaced.current) {
+      dockRef.current.position.copy(savedDockPosition.current)
+      dockRef.current.rotation.copy(savedDockRotation.current)
+    }
+  }, [cinemaMode])
+
   return (
     <>
       <Suspense fallback={null}>
@@ -647,7 +658,13 @@ export default function VRScene() {
         </Container>
         <Container padding={10} justifyContent="center" alignItems="center" flexDirection="row" gap={20}>
           <UiButton label={playing ? 'Pause' : 'Play'} onClick={togglePlay} width={160} height={52} />
-          <UiButton label="Cinema Mode" onClick={() => setCinemaMode(true)} width={160} height={52} />
+          <UiButton label="Cinema Mode" onClick={() => {
+            if (dockRef.current) {
+              savedDockPosition.current.copy(dockRef.current.position)
+              savedDockRotation.current.copy(dockRef.current.rotation)
+            }
+            setCinemaMode(true)
+          }} width={160} height={52} />
           <UiButton label="Close" onClick={() => setVideoOpen(false)} width={160} height={52} />
         </Container>
       </Window>
