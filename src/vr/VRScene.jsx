@@ -258,7 +258,7 @@ function Window({
 }
 
 export default function VRScene() {
-  const { camera } = useThree()
+  const { camera, gl } = useThree()
   const panos = usePanoList()
   const [panoIndex, setPanoIndex] = useState(() => Number.parseInt(localStorage.getItem('panoIndex') || '0', 10) || 0)
   const videos = useVideoList()
@@ -385,7 +385,9 @@ export default function VRScene() {
         await videoEl.play()
         setPlaying(true)
       }
-    } catch (e) {}
+    } catch (e) {
+      console.error('Video play error:', e)
+    }
   }, [playing])
 
   const toggleMute = useCallback(() => {
@@ -428,26 +430,51 @@ export default function VRScene() {
   const dockRef = useRef()
   const dockDragging = useRef(false)
   const dockPointerId = useRef(null)
+  const dockMoved = useRef(false)
+  const dockPlaced = useRef(false)
   const dockOffset = useMemo(() => new THREE.Vector3(), [])
   const dockTmpWorld = useMemo(() => new THREE.Vector3(), [])
   const dockTmpLocal = useMemo(() => new THREE.Vector3(), [])
+  const camPos = useMemo(() => new THREE.Vector3(), [])
+  const camDir = useMemo(() => new THREE.Vector3(), [])
 
-  useEffect(() => {
+  const placeDockAtCamera = useCallback(() => {
     if (!dockRef.current) return
-    const camPos = new THREE.Vector3()
-    const camDir = new THREE.Vector3()
     camera.getWorldPosition(camPos)
     camera.getWorldDirection(camDir)
+    camDir.y = 0
+    if (camDir.lengthSq() < 1e-6) camDir.set(0, 0, -1)
+    camDir.normalize()
     const targetPos = camPos.clone().add(camDir.multiplyScalar(DOCK_DISTANCE))
     targetPos.y = camPos.y - 0.75
     dockRef.current.position.copy(targetPos)
     dockRef.current.rotation.set(0, yawToFace(camera, targetPos), 0)
+    dockPlaced.current = true
+  }, [camDir, camPos])
+
+  const getDockWorld = useCallback(() => {
+    if (dockRef.current && dockPlaced.current) {
+      const p = new THREE.Vector3()
+      dockRef.current.getWorldPosition(p)
+      return p
+    }
+    camera.getWorldPosition(camPos)
+    camera.getWorldDirection(camDir)
+    camDir.y = 0
+    if (camDir.lengthSq() < 1e-6) camDir.set(0, 0, -1)
+    camDir.normalize()
+    const targetPos = camPos.clone().add(camDir.multiplyScalar(DOCK_DISTANCE))
+    targetPos.y = camPos.y - 0.75
+    return targetPos
+  }, [camDir, camPos])
+
+  useEffect(() => {
+    // Initial placement (desktop and before XR enters)
+    placeDockAtCamera()
   }, [])
 
   const placeWindow = useCallback((key) => {
-    if (!dockRef.current) return
-    const dockWorld = new THREE.Vector3()
-    dockRef.current.getWorldPosition(dockWorld)
+    const dockWorld = getDockWorld()
     const yaw = yawToFace(camera, dockWorld)
     const right = new THREE.Vector3(Math.sin(yaw + Math.PI / 2), 0, Math.cos(yaw + Math.PI / 2))
 
@@ -466,7 +493,7 @@ export default function VRScene() {
       setWindowPositions(mapping)
       return next
     })
-  }, [])
+  }, [getDockWorld])
 
   useEffect(() => {
     if (videoOpen) placeWindow('video')
@@ -483,6 +510,7 @@ export default function VRScene() {
     e.target?.setPointerCapture?.(e.pointerId)
     dockRef.current.getWorldPosition(dockTmpWorld)
     dockOffset.copy(dockTmpWorld).sub(e.point)
+    dockMoved.current = true
   }, [dockOffset, dockTmpWorld])
 
   const dockMove = useCallback((e) => {
@@ -507,6 +535,16 @@ export default function VRScene() {
     dockPointerId.current = null
     e.target?.releasePointerCapture?.(e.pointerId)
   }, [])
+
+  const wasPresentingRef = useRef(false)
+  useFrame(() => {
+    const isPresenting = gl.xr.isPresenting
+    if (!wasPresentingRef.current && isPresenting) {
+      // XR just started: place dock once in front of the user.
+      if (!dockMoved.current) placeDockAtCamera()
+    }
+    wasPresentingRef.current = isPresenting
+  })
 
   return (
     <>
@@ -568,8 +606,8 @@ export default function VRScene() {
         initialPosition={windowPositions.video?.position ?? [0, 1.55, -2]}
         title="Video Player"
         onMinimize={() => setVideoOpen(false)}
-        width={1100}
-        height={760}
+        width={videoFullscreen ? 1400 : 1100}
+        height={videoFullscreen ? 900 : 760}
       >
         <Container width="100%" gap={12}>
           <Container width="100%" flexDirection="row" alignItems="center" justifyContent="space-between">
@@ -647,8 +685,9 @@ export default function VRScene() {
             playsInline
             preload="auto"
             width="100%"
-            height={videoFullscreen ? 600 : 360}
+            height={videoFullscreen ? 700 : 400}
             borderRadius={16}
+            onError={(e) => console.error('Video loading error:', e)}
           />
 
           <Container width="100%" flexDirection="row" gap={10} alignItems="center" justifyContent="space-between">
