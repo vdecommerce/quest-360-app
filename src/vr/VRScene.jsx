@@ -269,18 +269,35 @@ export default function VRScene() {
   }, [])
 
   const videoRef = useRef(null)
-  const videoElementRef = useRef(null)
   const ambientAudioRef = useRef(null)
+  const [videoElement, setVideoElement] = useState(null)
   const [playing, setPlaying] = useState(false)
   const [ambientStarted, setAmbientStarted] = useState(false)
 
   useEffect(() => {
-    const videoEl = videoRef.current?.element
-    if (videoEl) videoElementRef.current = videoEl
-  })
+    const el = document.createElement('video')
+    el.src = videoSrc
+    el.crossOrigin = 'anonymous'
+    el.preload = 'auto'
+    el.loop = true
+    el.playsInline = true
+    el.muted = true
+    setVideoElement(el)
+
+    return () => {
+      try {
+        el.pause()
+      } catch (e) {
+        // ignore
+      }
+      if (el.parentElement) el.remove()
+      el.removeAttribute('src')
+      el.load?.()
+    }
+  }, [videoSrc])
 
   useEffect(() => {
-    const videoEl = videoElementRef.current
+    const videoEl = videoElement
     if (!videoEl) return
 
     const onPlay = () => setPlaying(true)
@@ -296,10 +313,10 @@ export default function VRScene() {
       videoEl.removeEventListener('pause', onPause)
       videoEl.removeEventListener('ended', onEnded)
     }
-  }, [videoOpen])
+  }, [videoElement])
 
   useEffect(() => {
-    const videoEl = videoElementRef.current
+    const videoEl = videoElement
     if (!videoEl) return
 
     if (videoOpen) {
@@ -314,7 +331,6 @@ export default function VRScene() {
       }
       videoEl.preload = 'auto'
       videoEl.playsInline = true
-      if (!playing) videoEl.pause()
       return
     }
 
@@ -325,15 +341,14 @@ export default function VRScene() {
     }
     if (videoEl.parentElement === document.body) videoEl.remove()
     setPlaying(false)
-  }, [videoOpen, playing])
+  }, [videoOpen, videoElement])
 
 
 
 
   const togglePlay = useCallback(async () => {
-    const videoEl = videoElementRef.current ?? videoRef.current?.element
+    const videoEl = videoElement ?? videoRef.current?.element
     if (!videoEl) return
-    videoElementRef.current = videoEl
 
     if (!videoEl.isConnected) {
       document.body.append(videoEl)
@@ -347,14 +362,32 @@ export default function VRScene() {
     videoEl.preload = 'auto'
     videoEl.playsInline = true
     videoEl.muted = true
-    if (videoEl.readyState < 2) {
-      console.warn('Video not ready, trying to load')
-      videoEl.load()
-    }
     try {
       if (playing) {
         videoEl.pause()
       } else {
+        if (videoEl.readyState < 2) {
+          console.warn('Video not ready, trying to load')
+          await new Promise((resolve, reject) => {
+            const onReady = () => {
+              cleanup()
+              resolve()
+            }
+            const onError = () => {
+              cleanup()
+              reject(new Error('Video failed to load'))
+            }
+            const cleanup = () => {
+              videoEl.removeEventListener('canplay', onReady)
+              videoEl.removeEventListener('loadeddata', onReady)
+              videoEl.removeEventListener('error', onError)
+            }
+            videoEl.addEventListener('canplay', onReady)
+            videoEl.addEventListener('loadeddata', onReady)
+            videoEl.addEventListener('error', onError)
+            videoEl.load()
+          })
+        }
         await videoEl.play()
         // Start ambient audio after user interaction to bypass autoplay blocks
         if (!ambientStarted && ambientAudioRef.current) {
@@ -369,7 +402,7 @@ export default function VRScene() {
     } catch (e) {
       console.error('Video play error:', e)
     }
-  }, [playing, ambientStarted])
+  }, [playing, ambientStarted, videoElement])
 
 
 
@@ -586,7 +619,7 @@ export default function VRScene() {
         <Container flexGrow={1} width="100%" backgroundColor="black">
           <Video
             ref={videoRef}
-            src={videoSrc}
+            src={videoElement ?? undefined}
             crossOrigin="anonymous"
             muted={true}
             autoplay={false}
