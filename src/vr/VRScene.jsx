@@ -688,10 +688,10 @@ export default function VRScene() {
       {cinemaMode && (
         <>
           <mesh>
-            <sphereGeometry args={[50, 64, 32]} />
-            <meshBasicMaterial color="black" opacity={0.7} transparent side={THREE.BackSide} />
+            <sphereGeometry args={[5, 64, 32]} />
+            <meshBasicMaterial color="black" opacity={0.8} transparent side={THREE.BackSide} />
           </mesh>
-          <mesh position={[0, 0.5, -3]} onClick={() => setCinemaMode(false)}>
+          <mesh position={[0, 1.5, -3]} onClick={() => setCinemaMode(false)}>
             <planeGeometry args={[6, 3.375]} />
             <meshBasicMaterial map={videoTexture} />
           </mesh>
