@@ -567,13 +567,7 @@ export default function VRScene() {
         <PanoSphere src={src} />
       </Suspense>
 
-      {videoOpen && (
-        <mesh>
-          <sphereGeometry args={[49, 64, 32]} />
-          <meshBasicMaterial color="black" opacity={0.5} transparent side={THREE.BackSide} />
-        </mesh>
-      )}
-
+      {!cinemaMode && (
       <group ref={dockRef}>
         <Root
           pixelSize={UI_PIXEL_SIZE}
@@ -626,6 +620,7 @@ export default function VRScene() {
           </Container>
         </Root>
       </group>
+      )}
 
       <Window
         visible={videoOpen && !cinemaMode}
@@ -658,7 +653,7 @@ export default function VRScene() {
       </Window>
 
       <Window
-        visible={galleryOpen}
+        visible={galleryOpen && !cinemaMode}
         initialPosition={windowPositions.gallery?.position ?? [1.0, 1.55, -2]}
         title="360 Gallery"
         titlePlacement="bottom"
@@ -696,7 +691,7 @@ export default function VRScene() {
             <sphereGeometry args={[50, 64, 32]} />
             <meshBasicMaterial color="black" opacity={0.7} transparent side={THREE.BackSide} />
           </mesh>
-          <mesh position={[0, 0, -3]}>
+          <mesh position={[0, 0.5, -3]} onClick={() => setCinemaMode(false)}>
             <planeGeometry args={[6, 3.375]} />
             <meshBasicMaterial map={videoTexture} />
           </mesh>
