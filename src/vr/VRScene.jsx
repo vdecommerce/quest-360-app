@@ -281,7 +281,6 @@ export default function VRScene() {
     el.preload = 'auto'
     el.loop = true
     el.playsInline = true
-    el.muted = true
     setVideoElement(el)
 
     return () => {
@@ -361,7 +360,6 @@ export default function VRScene() {
     }
     videoEl.preload = 'auto'
     videoEl.playsInline = true
-    videoEl.muted = true
     try {
       if (playing) {
         videoEl.pause()
@@ -471,7 +469,7 @@ export default function VRScene() {
   useEffect(() => {
     const audio = new Audio('/assets/geluid.mp3')
     audio.loop = true
-    audio.volume = 0.5
+    audio.volume = 1.0
     ambientAudioRef.current = audio
     return () => {
       audio.pause()
@@ -558,6 +556,13 @@ export default function VRScene() {
         <PanoSphere src={src} />
       </Suspense>
 
+      {videoOpen && (
+        <mesh>
+          <sphereGeometry args={[49, 64, 32]} />
+          <meshBasicMaterial color="black" opacity={0.5} transparent side={THREE.BackSide} />
+        </mesh>
+      )}
+
       <group ref={dockRef}>
         <Root
           pixelSize={UI_PIXEL_SIZE}
@@ -574,10 +579,14 @@ export default function VRScene() {
         >
           <Container width="100%" height="100%" flexDirection="row" alignItems="center" justifyContent="space-between" gap={12} paddingX={16}>
             <UiButton
-              label="Video Player"
+              label={videoOpen ? 'Close Video' : 'Video Player'}
               onClick={() => {
-                openVideo()
-                placeWindow('video')
+                if (!videoOpen) {
+                  setVideoOpen(true)
+                  placeWindow('video')
+                } else {
+                  setVideoOpen(false)
+                }
               }}
               width={240}
               height={70}
@@ -609,10 +618,9 @@ export default function VRScene() {
 
       <Window
         visible={videoOpen}
-        initialPosition={windowPositions.video?.position ?? [0, 1.55, -2]}
+        initialPosition={windowPositions.video?.position ?? [-1.0, 1.55, -2]}
         title="Video Player"
         titlePlacement="bottom"
-        onMinimize={() => setVideoOpen(false)}
         width={1000}
         height={750}
       >
@@ -621,7 +629,6 @@ export default function VRScene() {
             ref={videoRef}
             src={videoElement ?? undefined}
             crossOrigin="anonymous"
-            muted={true}
             autoplay={false}
             loop
             playsInline
@@ -640,8 +647,9 @@ export default function VRScene() {
 
       <Window
         visible={galleryOpen}
-        initialPosition={windowPositions.gallery?.position ?? [0.85, 1.55, -2]}
+        initialPosition={windowPositions.gallery?.position ?? [1.0, 1.55, -2]}
         title="360 Gallery"
+        titlePlacement="bottom"
         onMinimize={() => setGalleryOpen(false)}
         width={1000}
         height={760}
@@ -666,34 +674,16 @@ export default function VRScene() {
                   key={p}
                   onClick={() => setPanoIndex(absoluteIndex)}
                   width="100%"
-                  height={104}
-                  flexDirection="row"
+                  height={200}
+                  flexDirection="column"
                   alignItems="center"
-                  justifyContent="space-between"
+                  justifyContent="center"
                   backgroundColor={selected ? '#00f2fe' : '#ffffff'}
                   backgroundOpacity={selected ? 0.18 : 0.06}
                   borderRadius={16}
-                  paddingX={14}
-                  paddingY={10}
-                  gap={14}
+                  padding={10}
                 >
-                  <Container
-                    width={200}
-                    height={84}
-                    borderRadius={14}
-                    backgroundColor="#ffffff"
-                    backgroundOpacity={0.04}
-                    padding={6}
-                  >
-                    <Image src={p} width="100%" height="100%" borderRadius={10} />
-                  </Container>
-                  <Container width="100%" gap={6}>
-                    <Text fontSize={18} color="#EAF6FF">{truncateMiddle(fileBaseName(p), 56)}</Text>
-                    <Text fontSize={14} color="#A9D7FF">PNG - 360 pano</Text>
-                  </Container>
-                  <Container width={110} alignItems="flex-end">
-                    <Text fontSize={14} color="#A9D7FF">{selected ? 'Selected' : ''}</Text>
-                  </Container>
+                  <Image src={p} width={300} height={180} borderRadius={10} />
                 </Container>
               )
             })}
