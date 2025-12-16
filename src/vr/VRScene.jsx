@@ -191,6 +191,7 @@ function Window({
         borderRadius={18}
         padding={18}
         gap={14}
+        flexDirection="column"
       >
         {title && (
           <Container
@@ -261,9 +262,6 @@ export default function VRScene() {
 
 
 
-
-
-
   const togglePlay = useCallback(async () => {
     const videoEl = videoRef.current?.element
     if (!videoEl) return
@@ -278,6 +276,7 @@ export default function VRScene() {
       } else {
         await videoEl.play()
         setPlaying(true)
+        videoEl.muted = false
       }
     } catch (e) {
       console.error('Video play error:', e)
@@ -487,7 +486,8 @@ export default function VRScene() {
             ref={videoRef}
             src={videoSrc}
             crossOrigin="anonymous"
-            muted={false}
+            muted={true}
+            autoplay={true}
             loop
             playsInline
             preload="auto"
