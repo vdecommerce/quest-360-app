@@ -128,6 +128,7 @@ function Window({
   visible,
   initialPosition,
   title,
+  titlePlacement = 'top',
   onMinimize,
   children,
   width = 1200,
@@ -180,6 +181,38 @@ function Window({
 
   if (!visible) return null
 
+  const TitleBar = title ? (
+    <Container
+      width="100%"
+      height={48}
+      flexDirection="row"
+      alignItems="center"
+      justifyContent="space-between"
+      backgroundColor="#000000"
+      backgroundOpacity={0.35}
+      borderRadius={14}
+      paddingX={16}
+      gap={12}
+    >
+      <Container
+        flexGrow={1}
+        height="100%"
+        alignItems="center"
+        justifyContent="flex-start"
+        flexDirection="row"
+        onPointerDown={onDown}
+        onPointerMove={onMove}
+        onPointerUp={onUp}
+        onPointerCancel={onUp}
+      >
+        <Text fontSize={24} color="#EAF6FF">
+          {title}
+        </Text>
+      </Container>
+      <UiIconButton label="X" onClick={onMinimize} size={36} />
+    </Container>
+  ) : null
+
   return (
     <group ref={groupRef} position={initialPosition}>
       <Root
@@ -193,30 +226,9 @@ function Window({
         gap={14}
         flexDirection="column"
       >
-        {title && (
-          <Container
-            width="100%"
-            height={48}
-            flexDirection="row"
-            alignItems="center"
-            justifyContent="space-between"
-            backgroundColor="#000000"
-            backgroundOpacity={0.35}
-            borderRadius={14}
-            paddingX={16}
-            onPointerDown={onDown}
-            onPointerMove={onMove}
-            onPointerUp={onUp}
-            onPointerCancel={onUp}
-          >
-            <Text fontSize={24} color="#EAF6FF">
-              {title}
-            </Text>
-            <UiIconButton label="X" onClick={onMinimize} size={36} />
-          </Container>
-        )}
-
+        {titlePlacement === 'top' && TitleBar}
         {children}
+        {titlePlacement === 'bottom' && TitleBar}
       </Root>
     </group>
   )
@@ -257,16 +269,84 @@ export default function VRScene() {
   }, [])
 
   const videoRef = useRef(null)
+  const videoElementRef = useRef(null)
   const ambientAudioRef = useRef(null)
   const [playing, setPlaying] = useState(false)
   const [ambientStarted, setAmbientStarted] = useState(false)
+
+  useEffect(() => {
+    const videoEl = videoRef.current?.element
+    if (videoEl) videoElementRef.current = videoEl
+  })
+
+  useEffect(() => {
+    const videoEl = videoElementRef.current
+    if (!videoEl) return
+
+    const onPlay = () => setPlaying(true)
+    const onPause = () => setPlaying(false)
+    const onEnded = () => setPlaying(false)
+
+    videoEl.addEventListener('play', onPlay)
+    videoEl.addEventListener('pause', onPause)
+    videoEl.addEventListener('ended', onEnded)
+
+    return () => {
+      videoEl.removeEventListener('play', onPlay)
+      videoEl.removeEventListener('pause', onPause)
+      videoEl.removeEventListener('ended', onEnded)
+    }
+  }, [videoOpen])
+
+  useEffect(() => {
+    const videoEl = videoElementRef.current
+    if (!videoEl) return
+
+    if (videoOpen) {
+      if (!videoEl.isConnected) {
+        document.body.append(videoEl)
+        videoEl.style.position = 'absolute'
+        videoEl.style.width = '1px'
+        videoEl.style.height = '1px'
+        videoEl.style.zIndex = '-1000'
+        videoEl.style.top = '0px'
+        videoEl.style.left = '0px'
+      }
+      videoEl.preload = 'auto'
+      videoEl.playsInline = true
+      if (!playing) videoEl.pause()
+      return
+    }
+
+    try {
+      videoEl.pause()
+    } catch (e) {
+      // ignore
+    }
+    if (videoEl.parentElement === document.body) videoEl.remove()
+    setPlaying(false)
+  }, [videoOpen, playing])
 
 
 
 
   const togglePlay = useCallback(async () => {
-    const videoEl = videoRef.current?.element
+    const videoEl = videoElementRef.current ?? videoRef.current?.element
     if (!videoEl) return
+    videoElementRef.current = videoEl
+
+    if (!videoEl.isConnected) {
+      document.body.append(videoEl)
+      videoEl.style.position = 'absolute'
+      videoEl.style.width = '1px'
+      videoEl.style.height = '1px'
+      videoEl.style.zIndex = '-1000'
+      videoEl.style.top = '0px'
+      videoEl.style.left = '0px'
+    }
+    videoEl.preload = 'auto'
+    videoEl.playsInline = true
+    videoEl.muted = true
     if (videoEl.readyState < 2) {
       console.warn('Video not ready, trying to load')
       videoEl.load()
@@ -274,11 +354,8 @@ export default function VRScene() {
     try {
       if (playing) {
         videoEl.pause()
-        setPlaying(false)
       } else {
         await videoEl.play()
-        setPlaying(true)
-        videoEl.muted = false
         // Start ambient audio after user interaction to bypass autoplay blocks
         if (!ambientStarted && ambientAudioRef.current) {
           try {
@@ -501,6 +578,8 @@ export default function VRScene() {
         visible={videoOpen}
         initialPosition={windowPositions.video?.position ?? [0, 1.55, -2]}
         title="Video Player"
+        titlePlacement="bottom"
+        onMinimize={() => setVideoOpen(false)}
         width={1000}
         height={750}
       >
