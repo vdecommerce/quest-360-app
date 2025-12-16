@@ -372,9 +372,19 @@ export default function VRScene() {
     return () => window.clearInterval(id)
   }, [videoSrc])
 
+  useEffect(() => {
+    if (videoRef.current?.element) {
+      videoRef.current.element.load()
+    }
+  }, [videoSrc])
+
   const togglePlay = useCallback(async () => {
     const videoEl = videoRef.current?.element
     if (!videoEl) return
+    if (videoEl.readyState < 2) {
+      console.warn('Video not ready, trying to load')
+      videoEl.load()
+    }
     try {
       if (playing) {
         videoEl.pause()
@@ -610,12 +620,14 @@ export default function VRScene() {
         height={videoFullscreen ? 900 : 760}
       >
         <Container width="100%" gap={12}>
-          <Container width="100%" flexDirection="row" alignItems="center" justifyContent="space-between">
-            <Container width="70%" gap={4}>
+          <Container width="100%" flexDirection="row" alignItems="center" gap={10}>
+            <Container flexShrink={1} gap={4}>
               <Text fontSize={18} color="#EAF6FF">{truncateMiddle(fileBaseName(videoSrc), 42)}</Text>
               <Text fontSize={14} color="#A9D7FF">{timeLabel}</Text>
             </Container>
-            <UiButton label={videoFullscreen ? 'Exit Fullscreen' : 'Fullscreen'} onClick={() => setVideoFullscreen((v) => !v)} width={240} height={52} />
+            <Container flexShrink={0}>
+              <UiButton label={videoFullscreen ? 'Exit Fullscreen' : 'Fullscreen'} onClick={() => setVideoFullscreen((v) => !v)} width={240} height={52} />
+            </Container>
           </Container>
 
           {!videoFullscreen && (
@@ -676,19 +688,23 @@ export default function VRScene() {
             </Container>
           )}
 
-          <Video
-            ref={videoRef}
-            src={videoSrc}
-            crossOrigin="anonymous"
-            muted={muted}
-            loop
-            playsInline
-            preload="auto"
-            width="100%"
-            height={videoFullscreen ? 700 : 400}
-            borderRadius={16}
-            onError={(e) => console.error('Video loading error:', e)}
-          />
+          <Suspense fallback={<Text>Loading...</Text>}>
+            <Container backgroundColor="black">
+              <Video
+                ref={videoRef}
+                src={videoSrc}
+                crossOrigin="anonymous"
+                muted={muted}
+                loop
+                playsInline
+                preload="auto"
+                width="100%"
+                height={videoFullscreen ? 700 : 400}
+                borderRadius={16}
+                onError={(e) => console.error('Video loading error:', e)}
+              />
+            </Container>
+          </Suspense>
 
           <Container width="100%" flexDirection="row" gap={10} alignItems="center" justifyContent="space-between">
             <UiButton label={playing ? 'Pause' : 'Play'} onClick={togglePlay} variant="secondary" width={160} height={52} />
