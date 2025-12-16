@@ -482,11 +482,7 @@ export default function VRScene() {
         width={1000}
         height={750}
       >
-        <Container flexDirection="row" alignItems="center" justifyContent="space-between" paddingX={16}>
-          <Text>Video Player</Text>
-          <UiIconButton label="X" onClick={() => setVideoOpen(false)} size={36} />
-        </Container>
-        <Container backgroundColor="black">
+        <Container flexGrow={1} width="100%" backgroundColor="black">
           <Video
             ref={videoRef}
             src={videoSrc}
@@ -501,7 +497,7 @@ export default function VRScene() {
             onError={(e) => console.error('Video loading error:', e)}
           />
         </Container>
-        <Container alignItems="center" justifyContent="center">
+        <Container padding={10} justifyContent="center" alignItems="center">
           <UiButton label={playing ? 'Pause' : 'Play'} onClick={togglePlay} width={160} height={52} />
         </Container>
       </Window>
