@@ -38,10 +38,6 @@ function usePanoList() {
   return items.length ? items : ['/assets/foto.png']
 }
 
-function useVideoList() {
-  const items = useAssetList('/assets/videos.json', '.mp4')
-  return items.length ? items : ['/assets/video.mp4']
-}
 
 function PanoSphere({ src }) {
   const texture = useTexture(src)
@@ -57,29 +53,6 @@ function PanoSphere({ src }) {
   )
 }
 
-function FollowCameraGroup({ distance = 0.85, y = -0.35, children }) {
-  const ref = useRef()
-  const { camera } = useThree()
-  const dir = useMemo(() => new THREE.Vector3(), [])
-  const pos = useMemo(() => new THREE.Vector3(), [])
-  const look = useMemo(() => new THREE.Vector3(), [])
-
-  useFrame(() => {
-    if (!ref.current) return
-    camera.getWorldDirection(dir)
-    camera.getWorldPosition(pos)
-    const targetPos = pos.clone().add(dir.multiplyScalar(distance))
-    targetPos.y += y
-    ref.current.position.copy(targetPos)
-    look.copy(pos)
-    look.y = targetPos.y
-    ref.current.lookAt(look)
-    ref.current.rotation.x = 0
-    ref.current.rotation.z = 0
-  })
-
-  return <group ref={ref}>{children}</group>
-}
 
 function yawToFace(camera, worldPos) {
   const camPos = new THREE.Vector3()
@@ -87,17 +60,6 @@ function yawToFace(camera, worldPos) {
   const dx = camPos.x - worldPos.x
   const dz = camPos.z - worldPos.z
   return Math.atan2(dx, dz)
-}
-
-function clamp01(v) {
-  return Math.min(1, Math.max(0, v))
-}
-
-function formatTime(seconds) {
-  if (!Number.isFinite(seconds) || seconds < 0) return '0:00'
-  const m = Math.floor(seconds / 60)
-  const s = Math.floor(seconds % 60)
-  return `${m}:${String(s).padStart(2, '0')}`
 }
 
 function fileBaseName(p) {
@@ -261,19 +223,15 @@ export default function VRScene() {
   const { camera, gl } = useThree()
   const panos = usePanoList()
   const [panoIndex, setPanoIndex] = useState(() => Number.parseInt(localStorage.getItem('panoIndex') || '0', 10) || 0)
-  const videos = useVideoList()
-  const [videoIndex, setVideoIndex] = useState(() => Number.parseInt(localStorage.getItem('videoIndex') || '0', 10) || 0)
 
   const [videoOpen, setVideoOpen] = useState(true)
   const [galleryOpen, setGalleryOpen] = useState(false)
   const [galleryPage, setGalleryPage] = useState(0)
-  const [videoPage, setVideoPage] = useState(0)
-  const [videoFullscreen, setVideoFullscreen] = useState(false)
   const [openOrder, setOpenOrder] = useState([])
   const [windowPositions, setWindowPositions] = useState({})
 
   const src = panos.length ? panos[(panoIndex % panos.length + panos.length) % panos.length] : '/assets/foto.png'
-  const videoSrc = videos.length ? videos[(videoIndex % videos.length + videos.length) % videos.length] : '/assets/video.mp4'
+  const videoSrc = '/assets/video.mp4'
 
   useEffect(() => {
     if (!panos.length) return
@@ -281,11 +239,6 @@ export default function VRScene() {
     localStorage.setItem('panoIndex', String(idx))
   }, [panoIndex, panos.length])
 
-  useEffect(() => {
-    if (!videos.length) return
-    const idx = (videoIndex % videos.length + videos.length) % videos.length
-    localStorage.setItem('videoIndex', String(idx))
-  }, [videoIndex, videos.length])
 
   const openVideo = useCallback(() => {
     setVideoOpen(true)
@@ -298,85 +251,16 @@ export default function VRScene() {
   const closeAll = useCallback(() => {
     setVideoOpen(false)
     setGalleryOpen(false)
-    setVideoFullscreen(false)
   }, [])
 
   const videoRef = useRef(null)
   const [playing, setPlaying] = useState(false)
-  const [muted, setMuted] = useState(true)
-  const [progress, setProgress] = useState(0)
-  const [timeLabel, setTimeLabel] = useState('0:00 / 0:00')
-  const [videoReady, setVideoReady] = useState(false)
 
-  useEffect(() => {
-    const prime = async () => {
-      const el = videoRef.current?.element
-      if (!el) return
-      try {
-        el.muted = true
-        await el.play()
-        el.currentTime = 0.001
-      } catch (e) {}
-    }
-    window.addEventListener('pointerdown', prime, { once: true })
-    return () => window.removeEventListener('pointerdown', prime)
-  }, [])
 
-  useEffect(() => {
-    const el = videoRef.current?.element
-    if (!el) return
-    el.pause()
-    el.currentTime = 0
-    setPlaying(false)
-    setMuted(true)
-    setVideoReady(false)
-  }, [videoSrc])
 
-  useEffect(() => {
-    const el = videoRef.current?.element
-    if (!el) return
-    // Ensure the video texture has frames even before the user presses play.
-    ;(async () => {
-      try {
-        el.muted = true
-        setMuted(true)
-        await el.play()
-        setPlaying(true)
-      } catch (e) {}
-    })()
-  }, [videoSrc])
 
-  useEffect(() => {
-    const el = videoRef.current?.element
-    if (!el) return
-    const tick = () => {
-      setVideoReady(el.readyState >= 2 && (el.videoWidth || 0) > 0)
-    }
-    const id = window.setInterval(tick, 250)
-    tick()
-    return () => window.clearInterval(id)
-  }, [videoSrc])
 
-  useEffect(() => {
-    const el = videoRef.current?.element
-    if (!el) return
-    const tick = () => {
-      const duration = el.duration || 0
-      const current = el.currentTime || 0
-      const p = duration > 0 ? current / duration : 0
-      setProgress(clamp01(p))
-      setTimeLabel(`${formatTime(current)} / ${formatTime(duration)}`)
-    }
-    const id = window.setInterval(tick, 125)
-    tick()
-    return () => window.clearInterval(id)
-  }, [videoSrc])
 
-  useEffect(() => {
-    if (videoRef.current?.element) {
-      videoRef.current.element.load()
-    }
-  }, [videoSrc])
 
   const togglePlay = useCallback(async () => {
     const videoEl = videoRef.current?.element
@@ -390,8 +274,6 @@ export default function VRScene() {
         videoEl.pause()
         setPlaying(false)
       } else {
-        setMuted(false)
-        videoEl.muted = false
         await videoEl.play()
         setPlaying(true)
       }
@@ -400,22 +282,7 @@ export default function VRScene() {
     }
   }, [playing])
 
-  const toggleMute = useCallback(() => {
-    const videoEl = videoRef.current?.element
-    if (!videoEl) return
-    const next = !muted
-    setMuted(next)
-    videoEl.muted = next
-  }, [muted])
 
-  const nextVideo = useCallback(() => {
-    if (!videos.length) return
-    setVideoIndex((i) => (i + 1) % videos.length)
-  }, [videos.length])
-  const prevVideo = useCallback(() => {
-    if (!videos.length) return
-    setVideoIndex((i) => (i - 1 + videos.length) % videos.length)
-  }, [videos.length])
 
   const nextPano = useCallback(() => {
     if (!panos.length) return
@@ -432,10 +299,6 @@ export default function VRScene() {
   const pageStart = safePage * pageSize
   const pageItems = panos.slice(pageStart, pageStart + pageSize)
 
-  const videoMaxPage = Math.max(1, Math.ceil(videos.length / pageSize))
-  const videoSafePage = Math.min(videoMaxPage - 1, Math.max(0, videoPage))
-  const videoStart = videoSafePage * pageSize
-  const videoItems = videos.slice(videoStart, videoStart + pageSize)
 
   const dockRef = useRef()
   const dockDragging = useRef(false)
@@ -616,103 +479,30 @@ export default function VRScene() {
         initialPosition={windowPositions.video?.position ?? [0, 1.55, -2]}
         title="Video Player"
         onMinimize={() => setVideoOpen(false)}
-        width={videoFullscreen ? 1400 : 1100}
-        height={videoFullscreen ? 900 : 760}
+        width={1000}
+        height={750}
       >
-        <Container width="100%" gap={12}>
-          <Container width="100%" flexDirection="row" alignItems="center" gap={10}>
-            <Container flexShrink={1} gap={4}>
-              <Text fontSize={18} color="#EAF6FF">{truncateMiddle(fileBaseName(videoSrc), 42)}</Text>
-              <Text fontSize={14} color="#A9D7FF">{timeLabel}</Text>
-            </Container>
-            <Container flexShrink={0}>
-              <UiButton label={videoFullscreen ? 'Exit Fullscreen' : 'Fullscreen'} onClick={() => setVideoFullscreen((v) => !v)} width={240} height={52} />
-            </Container>
-          </Container>
-
-          {!videoFullscreen && (
-            <Container width="100%" gap={10}>
-              <Container width="100%" flexDirection="row" alignItems="center" justifyContent="space-between">
-                <Text fontSize={16} color="#EAF6FF">Video Library</Text>
-                <Text fontSize={14} color="#A9D7FF">Page {videoSafePage + 1}/{videoMaxPage}</Text>
-              </Container>
-              <Container width="100%" gap={10}>
-                {videoItems.map((p, i) => {
-                  const absoluteIndex = videoStart + i
-                  const selected = absoluteIndex === ((videoIndex % videos.length + videos.length) % videos.length)
-                  return (
-                    <Container
-                      key={p}
-                      onClick={() => setVideoIndex(absoluteIndex)}
-                      width="100%"
-                      height={84}
-                      flexDirection="row"
-                      alignItems="center"
-                      justifyContent="space-between"
-                      backgroundColor={selected ? '#00f2fe' : '#ffffff'}
-                      backgroundOpacity={selected ? 0.18 : 0.06}
-                      borderRadius={16}
-                      paddingX={14}
-                    >
-                      <Container width="80%" gap={4}>
-                        <Text fontSize={18} color="#EAF6FF">{truncateMiddle(fileBaseName(p), 50)}</Text>
-                        <Text fontSize={14} color="#A9D7FF">MP4</Text>
-                      </Container>
-                      <Text fontSize={14} color="#A9D7FF">{selected ? 'Selected' : ''}</Text>
-                    </Container>
-                  )
-                })}
-              </Container>
-
-              <Container width="100%" flexDirection="row" alignItems="center" justifyContent="space-between">
-                <Container flexDirection="row" gap={10} alignItems="center">
-                  <UiIconButton label="<" onClick={() => setVideoPage((p) => Math.max(0, p - 1))} size={44} />
-                  <UiIconButton label=">" onClick={() => setVideoPage((p) => Math.min(videoMaxPage - 1, p + 1))} size={44} />
-                </Container>
-                <Text fontSize={14} color="#A9D7FF">Page {videoSafePage + 1}/{videoMaxPage}</Text>
-              </Container>
-            </Container>
-          )}
-
-          {!videoReady && (
-            <Container
-              width="100%"
-              height={48}
-              backgroundColor="#ffffff"
-              backgroundOpacity={0.06}
-              borderRadius={16}
-              alignItems="center"
-              justifyContent="center"
-            >
-              <Text fontSize={14} color="#A9D7FF">Video loading… (tap Play if it stays black)</Text>
-            </Container>
-          )}
-
-          <Suspense fallback={<Text>Loading...</Text>}>
-            <Container backgroundColor="black">
-              <Video
-                ref={videoRef}
-                src={videoSrc}
-                crossOrigin="anonymous"
-                muted={muted}
-                loop
-                playsInline
-                preload="auto"
-                width="100%"
-                height={videoFullscreen ? 700 : 400}
-                borderRadius={16}
-                onError={(e) => console.error('Video loading error:', e)}
-              />
-            </Container>
-          </Suspense>
-
-          <Container width="100%" flexDirection="row" gap={10} alignItems="center" justifyContent="space-between">
-            <UiButton label={playing ? 'Pause' : 'Play'} onClick={togglePlay} variant="secondary" width={160} height={52} />
-            <UiButton label={muted ? 'Unmute' : 'Mute'} onClick={toggleMute} variant="secondary" width={180} height={52} />
-            <Container width="100%" height={52} backgroundColor="#ffffff" backgroundOpacity={0.06} borderRadius={16} paddingX={14} alignItems="center" justifyContent="center">
-              <Text fontSize={14} color="#A9D7FF">Progress {Math.round(progress * 100)}%</Text>
-            </Container>
-          </Container>
+        <Container flexDirection="row" alignItems="center" justifyContent="space-between" paddingX={16}>
+          <Text>Video Player</Text>
+          <UiIconButton label="X" onClick={() => setVideoOpen(false)} size={36} />
+        </Container>
+        <Container backgroundColor="black">
+          <Video
+            ref={videoRef}
+            src={videoSrc}
+            crossOrigin="anonymous"
+            muted={false}
+            loop
+            playsInline
+            preload="auto"
+            width="100%"
+            height="100%"
+            borderRadius={16}
+            onError={(e) => console.error('Video loading error:', e)}
+          />
+        </Container>
+        <Container alignItems="center" justifyContent="center">
+          <UiButton label={playing ? 'Pause' : 'Play'} onClick={togglePlay} width={160} height={52} />
         </Container>
       </Window>
 
