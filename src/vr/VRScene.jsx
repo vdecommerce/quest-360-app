@@ -192,26 +192,28 @@ function Window({
         padding={18}
         gap={14}
       >
-        <Container
-          width="100%"
-          height={48}
-          flexDirection="row"
-          alignItems="center"
-          justifyContent="space-between"
-          backgroundColor="#000000"
-          backgroundOpacity={0.35}
-          borderRadius={14}
-          paddingX={16}
-          onPointerDown={onDown}
-          onPointerMove={onMove}
-          onPointerUp={onUp}
-          onPointerCancel={onUp}
-        >
-          <Text fontSize={24} color="#EAF6FF">
-            {title}
-          </Text>
-          <UiIconButton label="X" onClick={onMinimize} size={36} />
-        </Container>
+        {title && (
+          <Container
+            width="100%"
+            height={48}
+            flexDirection="row"
+            alignItems="center"
+            justifyContent="space-between"
+            backgroundColor="#000000"
+            backgroundOpacity={0.35}
+            borderRadius={14}
+            paddingX={16}
+            onPointerDown={onDown}
+            onPointerMove={onMove}
+            onPointerUp={onUp}
+            onPointerCancel={onUp}
+          >
+            <Text fontSize={24} color="#EAF6FF">
+              {title}
+            </Text>
+            <UiIconButton label="X" onClick={onMinimize} size={36} />
+          </Container>
+        )}
 
         {children}
       </Root>
@@ -477,8 +479,6 @@ export default function VRScene() {
       <Window
         visible={videoOpen}
         initialPosition={windowPositions.video?.position ?? [0, 1.55, -2]}
-        title="Video Player"
-        onMinimize={() => setVideoOpen(false)}
         width={1000}
         height={750}
       >
@@ -497,8 +497,9 @@ export default function VRScene() {
             onError={(e) => console.error('Video loading error:', e)}
           />
         </Container>
-        <Container padding={10} justifyContent="center" alignItems="center">
+        <Container padding={10} justifyContent="center" alignItems="center" flexDirection="row" gap={20}>
           <UiButton label={playing ? 'Pause' : 'Play'} onClick={togglePlay} width={160} height={52} />
+          <UiButton label="Close" onClick={() => setVideoOpen(false)} width={160} height={52} />
         </Container>
       </Window>
 
