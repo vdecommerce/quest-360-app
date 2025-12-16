@@ -257,7 +257,9 @@ export default function VRScene() {
   }, [])
 
   const videoRef = useRef(null)
+  const ambientAudioRef = useRef(null)
   const [playing, setPlaying] = useState(false)
+  const [ambientStarted, setAmbientStarted] = useState(false)
 
 
 
@@ -277,11 +279,20 @@ export default function VRScene() {
         await videoEl.play()
         setPlaying(true)
         videoEl.muted = false
+        // Start ambient audio after user interaction to bypass autoplay blocks
+        if (!ambientStarted && ambientAudioRef.current) {
+          try {
+            await ambientAudioRef.current.play()
+            setAmbientStarted(true)
+          } catch (e) {
+            console.warn('Ambient audio play failed:', e)
+          }
+        }
       }
     } catch (e) {
       console.error('Video play error:', e)
     }
-  }, [playing])
+  }, [playing, ambientStarted])
 
 
 
@@ -345,6 +356,17 @@ export default function VRScene() {
   useEffect(() => {
     // Initial placement (desktop and before XR enters)
     placeDockAtCamera()
+  }, [])
+
+  useEffect(() => {
+    const audio = new Audio('/assets/geluid.mp3')
+    audio.loop = true
+    audio.volume = 0.5
+    ambientAudioRef.current = audio
+    return () => {
+      audio.pause()
+      audio.src = ''
+    }
   }, [])
 
   const placeWindow = useCallback((key) => {
@@ -478,6 +500,7 @@ export default function VRScene() {
       <Window
         visible={videoOpen}
         initialPosition={windowPositions.video?.position ?? [0, 1.55, -2]}
+        title="Video Player"
         width={1000}
         height={750}
       >
@@ -487,7 +510,7 @@ export default function VRScene() {
             src={videoSrc}
             crossOrigin="anonymous"
             muted={true}
-            autoplay={true}
+            autoplay={false}
             loop
             playsInline
             preload="auto"
