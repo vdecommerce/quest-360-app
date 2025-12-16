@@ -244,6 +244,7 @@ export default function VRScene() {
   const [galleryPage, setGalleryPage] = useState(0)
   const [openOrder, setOpenOrder] = useState([])
   const [windowPositions, setWindowPositions] = useState({})
+  const [cinemaMode, setCinemaMode] = useState(false)
 
   const src = panos.length ? panos[(panoIndex % panos.length + panos.length) % panos.length] : '/assets/foto.png'
   const videoSrc = '/assets/video.mp4'
@@ -271,6 +272,12 @@ export default function VRScene() {
   const videoRef = useRef(null)
   const ambientAudioRef = useRef(null)
   const [videoElement, setVideoElement] = useState(null)
+  const videoTexture = useMemo(() => {
+    if (!videoElement) return null
+    const tex = new THREE.VideoTexture(videoElement)
+    tex.colorSpace = THREE.SRGBColorSpace
+    return tex
+  }, [videoElement])
   const [playing, setPlaying] = useState(false)
   const [ambientStarted, setAmbientStarted] = useState(false)
 
@@ -402,7 +409,11 @@ export default function VRScene() {
     }
   }, [playing, ambientStarted, videoElement])
 
-
+  useEffect(() => {
+    if (cinemaMode && videoElement && !playing) {
+      togglePlay()
+    }
+  }, [cinemaMode, videoElement, playing, togglePlay])
 
   const nextPano = useCallback(() => {
     if (!panos.length) return
@@ -491,7 +502,7 @@ export default function VRScene() {
         const slot = slots[i] ?? (i - 1)
         const p = dockWorld.clone()
         p.y = dockWorld.y + 0.95
-        p.add(right.clone().multiplyScalar(slot * 0.85))
+        p.add(right.clone().multiplyScalar(slot * 1.4))
         mapping[k] = { position: [p.x, p.y, p.z], yaw }
       }
       setWindowPositions(mapping)
@@ -617,7 +628,7 @@ export default function VRScene() {
       </group>
 
       <Window
-        visible={videoOpen}
+        visible={videoOpen && !cinemaMode}
         initialPosition={windowPositions.video?.position ?? [-1.0, 1.55, -2]}
         title="Video Player"
         titlePlacement="bottom"
@@ -641,6 +652,7 @@ export default function VRScene() {
         </Container>
         <Container padding={10} justifyContent="center" alignItems="center" flexDirection="row" gap={20}>
           <UiButton label={playing ? 'Pause' : 'Play'} onClick={togglePlay} width={160} height={52} />
+          <UiButton label="Cinema Mode" onClick={() => setCinemaMode(true)} width={160} height={52} />
           <UiButton label="Close" onClick={() => setVideoOpen(false)} width={160} height={52} />
         </Container>
       </Window>
@@ -654,50 +666,56 @@ export default function VRScene() {
         width={1000}
         height={760}
       >
-        <Container width="100%" gap={12}>
-          <Container width="100%" flexDirection="row" alignItems="center" justifyContent="space-between">
-            <Container width="70%" gap={4}>
-              <Text fontSize={18} color="#EAF6FF">Select a 360 image</Text>
-              <Text fontSize={14} color="#A9D7FF">{truncateMiddle(fileBaseName(src), 46)}</Text>
-            </Container>
-            <Container width="30%" alignItems="flex-end">
-              <Text fontSize={14} color="#A9D7FF">Page {safePage + 1}/{maxPage}</Text>
-            </Container>
-          </Container>
-
-          <Container width="100%" gap={10}>
-            {pageItems.map((p, i) => {
-              const selected = p === src
-              const absoluteIndex = pageStart + i
-              return (
-                <Container
-                  key={p}
-                  onClick={() => setPanoIndex(absoluteIndex)}
-                  width="100%"
-                  height={200}
-                  flexDirection="column"
-                  alignItems="center"
-                  justifyContent="center"
-                  backgroundColor={selected ? '#00f2fe' : '#ffffff'}
-                  backgroundOpacity={selected ? 0.18 : 0.06}
-                  borderRadius={16}
-                  padding={10}
-                >
-                  <Image src={p} width={300} height={180} borderRadius={10} />
-                </Container>
-              )
-            })}
-          </Container>
-
-          <Container width="100%" flexDirection="row" alignItems="center" justifyContent="space-between">
-            <Container flexDirection="row" gap={10} alignItems="center">
-              <UiIconButton label="<" onClick={() => setGalleryPage((p) => Math.max(0, p - 1))} size={44} />
-              <UiIconButton label=">" onClick={() => setGalleryPage((p) => Math.min(maxPage - 1, p + 1))} size={44} />
-            </Container>
-            <Text fontSize={14} color="#A9D7FF">Page {safePage + 1}/{maxPage}</Text>
-          </Container>
+        <Container width="100%" flexDirection="row" flexWrap="wrap" gap={10} padding={10}>
+          {panos.map((p, i) => {
+            const selected = p === src
+            return (
+              <Container
+                key={p}
+                onClick={() => setPanoIndex(i)}
+                width="48%"
+                height={200}
+                flexDirection="column"
+                alignItems="center"
+                justifyContent="center"
+                backgroundColor={selected ? '#00f2fe' : '#ffffff'}
+                backgroundOpacity={selected ? 0.18 : 0.06}
+                borderRadius={16}
+                padding={10}
+              >
+                <Image src={p} width="100%" height="100%" borderRadius={10} />
+              </Container>
+            )
+          })}
         </Container>
       </Window>
+
+      {cinemaMode && (
+        <>
+          <mesh>
+            <sphereGeometry args={[50, 64, 32]} />
+            <meshBasicMaterial color="black" opacity={0.7} transparent side={THREE.BackSide} />
+          </mesh>
+          <mesh position={[0, 0, -3]}>
+            <planeGeometry args={[6, 3.375]} />
+            <meshBasicMaterial map={videoTexture} />
+          </mesh>
+          <group position={[0, -2, -2]}>
+            <Root
+              pixelSize={UI_PIXEL_SIZE}
+              width={200}
+              height={60}
+              backgroundColor="#000000"
+              backgroundOpacity={0.5}
+              borderRadius={10}
+            >
+              <Container width="100%" height="100%" alignItems="center" justifyContent="center">
+                <UiButton label="Back" onClick={() => setCinemaMode(false)} width={180} height={50} />
+              </Container>
+            </Root>
+          </group>
+        </>
+      )}
     </>
   )
 }
