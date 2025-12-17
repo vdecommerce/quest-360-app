@@ -141,7 +141,6 @@ function Window({
   const offset = useMemo(() => new THREE.Vector3(), [])
   const tmpWorld = useMemo(() => new THREE.Vector3(), [])
   const tmpLocal = useMemo(() => new THREE.Vector3(), [])
-  const faceWorld = useMemo(() => new THREE.Vector3(), [])
 
   const onDown = useCallback((e) => {
     e.stopPropagation()
@@ -180,13 +179,13 @@ function Window({
     e.target?.releasePointerCapture?.(e.pointerId)
   }, [])
 
-  useFrame(() => {
+  const positionKey = Array.isArray(initialPosition) ? initialPosition.join(',') : ''
+  useEffect(() => {
     if (!visible) return
-    if (dragging.current) return
     if (!groupRef.current) return
-    groupRef.current.getWorldPosition(faceWorld)
-    groupRef.current.rotation.set(0, yawToFace(camera, faceWorld), 0)
-  })
+    groupRef.current.getWorldPosition(tmpWorld)
+    groupRef.current.rotation.set(0, yawToFace(camera, tmpWorld), 0)
+  }, [visible, camera, positionKey, tmpWorld])
 
   if (!visible) return null
 
@@ -251,6 +250,7 @@ export default function VRScene() {
   const [videoOpen, setVideoOpen] = useState(true)
   const [galleryOpen, setGalleryOpen] = useState(false)
   const [galleryPage, setGalleryPage] = useState(0)
+  const [openOrder, setOpenOrder] = useState([])
   const [windowPositions, setWindowPositions] = useState({})
   const [cinemaMode, setCinemaMode] = useState(false)
   const [ambientEnabled, setAmbientEnabled] = useState(() => (localStorage.getItem('ambientEnabled') ?? '1') !== '0')
@@ -540,8 +540,6 @@ export default function VRScene() {
     }
   }, [ambientEnabled])
 
-  const windowSlotPreference = useMemo(() => ({ video: 1, gallery: -1 }), [])
-
   const placeWindows = useCallback((openKeys) => {
     if (!openKeys.length) {
       setWindowPositions({})
@@ -552,24 +550,33 @@ export default function VRScene() {
     const right = new THREE.Vector3(Math.sin(yaw + Math.PI / 2), 0, Math.cos(yaw + Math.PI / 2))
 
     const mapping = {}
+    const slots = [0, 1, -1, 2, -2, 3, -3]
     for (let i = 0; i < openKeys.length; i++) {
       const k = openKeys[i]
-      const slot = windowSlotPreference[k] ?? (i % 2 === 0 ? 1 : -1)
+      const slot = slots[i] ?? (i % 2 === 0 ? Math.ceil(i / 2) : -Math.ceil(i / 2))
       const p = dockWorld.clone()
       p.y = dockWorld.y + 0.95
       p.add(right.clone().multiplyScalar(slot * 1.4))
       mapping[k] = { position: [p.x, p.y, p.z], yaw }
     }
     setWindowPositions(mapping)
-  }, [camera, getDockWorld, windowSlotPreference])
+  }, [camera, getDockWorld])
 
   useEffect(() => {
     if (cinemaMode) return
-    const openKeys = []
-    if (videoOpen) openKeys.push('video')
-    if (galleryOpen) openKeys.push('gallery')
-    placeWindows(openKeys)
-  }, [videoOpen, galleryOpen, cinemaMode, placeWindows])
+    setOpenOrder((prev) => {
+      let next = prev.filter((k) => (k === 'video' ? videoOpen : k === 'gallery' ? galleryOpen : false))
+      if (videoOpen && !next.includes('video')) next = [...next, 'video']
+      if (galleryOpen && !next.includes('gallery')) next = [...next, 'gallery']
+      return next
+    })
+  }, [videoOpen, galleryOpen, cinemaMode])
+
+  useEffect(() => {
+    if (cinemaMode) return
+    const orderedOpen = openOrder.filter((k) => (k === 'video' ? videoOpen : k === 'gallery' ? galleryOpen : false))
+    placeWindows(orderedOpen)
+  }, [videoOpen, galleryOpen, cinemaMode, openOrder, placeWindows])
   useEffect(() => {
     if (!cinemaMode && galleryOpen && panos.length) setGalleryPage(Math.floor(panoIndex / 6))
   }, [cinemaMode, galleryOpen, panos.length, panoIndex])
