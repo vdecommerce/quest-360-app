@@ -9,6 +9,126 @@ const DOCK_DISTANCE = 2.0
 const GALLERY_PAGE_SIZE = 6
 const CINEMA_SCREEN_DISTANCE = 4.2
 const CINEMA_SCREEN_Y_OFFSET = 0.1
+const GALLERY_THUMB_MAX_SIZE = 512
+const GALLERY_THUMB_CACHE_LIMIT = 24
+
+async function loadScaledThumbnailTexture(url, maxSize) {
+  const res = await fetch(url, { cache: 'force-cache' })
+  const blob = await res.blob()
+
+  if (typeof createImageBitmap !== 'function') {
+    throw new Error('createImageBitmap not available')
+  }
+
+  const bitmap = await createImageBitmap(blob, { resizeWidth: maxSize, resizeQuality: 'high' })
+  const scale = Math.min(1, maxSize / bitmap.width, maxSize / bitmap.height)
+  const w = Math.max(1, Math.round(bitmap.width * scale))
+  const h = Math.max(1, Math.round(bitmap.height * scale))
+
+  const canvas = document.createElement('canvas')
+  canvas.width = w
+  canvas.height = h
+  const ctx = canvas.getContext('2d')
+  if (ctx) ctx.drawImage(bitmap, 0, 0, w, h)
+
+  try {
+    bitmap.close?.()
+  } catch (e) {
+    // ignore
+  }
+
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.colorSpace = THREE.SRGBColorSpace
+  texture.minFilter = THREE.LinearMipmapLinearFilter
+  texture.magFilter = THREE.LinearFilter
+  texture.generateMipmaps = true
+  texture.needsUpdate = true
+  return texture
+}
+
+function disposeThumbnailTexture(texture) {
+  if (!texture) return
+  try {
+    texture.dispose()
+  } catch (e) {
+    // ignore
+  }
+}
+
+function GalleryThumb({ url, selected, onSelect, cacheRef }) {
+  const [texture, setTexture] = useState(() => cacheRef.current.get(url)?.texture ?? null)
+
+  useEffect(() => {
+    let canceled = false
+
+    const touch = (entry) => {
+      cacheRef.current.delete(url)
+      cacheRef.current.set(url, entry)
+    }
+
+    const enforceLimit = () => {
+      while (cacheRef.current.size > GALLERY_THUMB_CACHE_LIMIT) {
+        const oldestKey = cacheRef.current.keys().next().value
+        const oldest = cacheRef.current.get(oldestKey)
+        cacheRef.current.delete(oldestKey)
+        if (oldest?.texture) disposeThumbnailTexture(oldest.texture)
+      }
+    }
+
+    ;(async () => {
+      const existing = cacheRef.current.get(url)
+      if (existing?.texture) {
+        touch(existing)
+        if (!canceled) setTexture(existing.texture)
+        return
+      }
+      if (existing?.promise) {
+        try {
+          const tex = await existing.promise
+          if (canceled) return
+          setTexture(tex)
+        } catch (e) {
+          // ignore
+        }
+        return
+      }
+
+      const promise = loadScaledThumbnailTexture(url, GALLERY_THUMB_MAX_SIZE)
+      cacheRef.current.set(url, { promise })
+      try {
+        const tex = await promise
+        const entry = { texture: tex }
+        touch(entry)
+        enforceLimit()
+        if (!canceled) setTexture(tex)
+      } catch (e) {
+        cacheRef.current.delete(url)
+        if (!canceled) setTexture(null)
+      }
+    })()
+
+    return () => {
+      canceled = true
+    }
+  }, [cacheRef, url])
+
+  return (
+    <Container
+      onClick={onSelect}
+      width="48%"
+      height={160}
+      flexDirection="column"
+      alignItems="center"
+      justifyContent="center"
+      backgroundColor={selected ? '#00f2fe' : '#ffffff'}
+      backgroundOpacity={selected ? 0.18 : 0.06}
+      borderRadius={16}
+      padding={8}
+    >
+      {texture ? <Image src={texture} width="100%" height="100%" borderRadius={10} /> : null}
+    </Container>
+  )
+}
 
 function useAssetList(pathname, exts, refreshToken = 0) {
   const [items, setItems] = useState([])
@@ -250,6 +370,7 @@ export default function VRScene() {
   const [panoRefreshToken, setPanoRefreshToken] = useState(0)
   const panos = usePanoList(panoRefreshToken)
   const [panoIndex, setPanoIndex] = useState(() => Number.parseInt(localStorage.getItem('panoIndex') || '0', 10) || 0)
+  const thumbCacheRef = useRef(new Map())
 
   const [videoOpen, setVideoOpen] = useState(true)
   const [galleryOpen, setGalleryOpen] = useState(false)
@@ -455,27 +576,6 @@ export default function VRScene() {
   const refreshPanos = useCallback(() => {
     setPanoRefreshToken((v) => v + 1)
   }, [])
-
-  const galleryPrefetchUrls = useMemo(() => {
-    if (!panos.length) return []
-    const pagesToPrefetch = [safePage, safePage + 1, safePage - 1].filter((p) => p >= 0 && p < maxPage)
-    const urls = []
-    for (const p of pagesToPrefetch) {
-      const start = p * pageSize
-      for (const url of panos.slice(start, start + pageSize)) urls.push(url)
-    }
-    return Array.from(new Set(urls))
-  }, [maxPage, pageSize, panos, safePage])
-
-  useEffect(() => {
-    if (!galleryOpen || cinemaMode) return
-    if (!galleryPrefetchUrls.length) return
-    try {
-      useTexture.preload(galleryPrefetchUrls)
-    } catch (e) {
-      // ignore (preload is best-effort)
-    }
-  }, [cinemaMode, galleryOpen, galleryPrefetchUrls])
 
 
   const dockRef = useRef()
@@ -897,21 +997,13 @@ export default function VRScene() {
             const selected = p === src
             const i = pageStart + idx
             return (
-              <Container
+              <GalleryThumb
                 key={p}
-                onClick={() => setPanoIndex(i)}
-                width="48%"
-                height={160}
-                flexDirection="column"
-                alignItems="center"
-                justifyContent="center"
-                backgroundColor={selected ? '#00f2fe' : '#ffffff'}
-                backgroundOpacity={selected ? 0.18 : 0.06}
-                borderRadius={16}
-                padding={8}
-              >
-                <Image src={p} width="100%" height="100%" borderRadius={10} />
-              </Container>
+                url={p}
+                selected={selected}
+                onSelect={() => setPanoIndex(i)}
+                cacheRef={thumbCacheRef}
+              />
             )
           })}
         </Container>
