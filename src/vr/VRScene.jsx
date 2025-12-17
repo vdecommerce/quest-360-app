@@ -7,6 +7,8 @@ import { Root, Container, Text, Image, Video } from '@react-three/uikit'
 const UI_PIXEL_SIZE = 0.0016
 const DOCK_DISTANCE = 2.0
 const GALLERY_PAGE_SIZE = 6
+const CINEMA_SCREEN_DISTANCE = 4.2
+const CINEMA_SCREEN_Y_OFFSET = 0.1
 
 function useAssetList(pathname, exts, refreshToken = 0) {
   const [items, setItems] = useState([])
@@ -256,6 +258,7 @@ export default function VRScene() {
   const [windowPositions, setWindowPositions] = useState({})
   const [cinemaMode, setCinemaMode] = useState(false)
   const [ambientEnabled, setAmbientEnabled] = useState(() => (localStorage.getItem('ambientEnabled') ?? '1') !== '0')
+  const [curvedCinema, setCurvedCinema] = useState(() => (localStorage.getItem('curvedCinema') ?? '0') === '1')
 
   const src = panos.length ? panos[(panoIndex % panos.length + panos.length) % panos.length] : '/assets/foto.png'
   const videoSrc = '/assets/video.mp4'
@@ -295,6 +298,10 @@ export default function VRScene() {
   useEffect(() => {
     localStorage.setItem('ambientEnabled', ambientEnabled ? '1' : '0')
   }, [ambientEnabled])
+
+  useEffect(() => {
+    localStorage.setItem('curvedCinema', curvedCinema ? '1' : '0')
+  }, [curvedCinema])
 
   useEffect(() => {
     const el = document.createElement('video')
@@ -449,6 +456,27 @@ export default function VRScene() {
     setPanoRefreshToken((v) => v + 1)
   }, [])
 
+  const galleryPrefetchUrls = useMemo(() => {
+    if (!panos.length) return []
+    const pagesToPrefetch = [safePage, safePage + 1, safePage - 1].filter((p) => p >= 0 && p < maxPage)
+    const urls = []
+    for (const p of pagesToPrefetch) {
+      const start = p * pageSize
+      for (const url of panos.slice(start, start + pageSize)) urls.push(url)
+    }
+    return Array.from(new Set(urls))
+  }, [maxPage, pageSize, panos, safePage])
+
+  useEffect(() => {
+    if (!galleryOpen || cinemaMode) return
+    if (!galleryPrefetchUrls.length) return
+    try {
+      useTexture.preload(galleryPrefetchUrls)
+    } catch (e) {
+      // ignore (preload is best-effort)
+    }
+  }, [cinemaMode, galleryOpen, galleryPrefetchUrls])
+
 
   const dockRef = useRef()
   const dockDragging = useRef(false)
@@ -545,6 +573,86 @@ export default function VRScene() {
       console.warn('Ambient audio play failed:', e)
     }
   }, [ambientEnabled])
+
+  const cinemaScreenRef = useRef(null)
+  const cinemaDragging = useRef(false)
+  const cinemaPointerId = useRef(null)
+  const cinemaOffset = useMemo(() => new THREE.Vector3(), [])
+  const cinemaTmpWorld = useMemo(() => new THREE.Vector3(), [])
+  const cinemaTmpLocal = useMemo(() => new THREE.Vector3(), [])
+  const cinemaCamPos = useMemo(() => new THREE.Vector3(), [])
+  const cinemaCamDir = useMemo(() => new THREE.Vector3(), [])
+
+  const flatCinemaGeometry = useMemo(() => new THREE.PlaneGeometry(6, 3.375, 1, 1), [])
+  const curvedCinemaGeometry = useMemo(() => {
+    const width = 6
+    const height = 3.375
+    const segments = 48
+    const curveDepth = 0.45
+    const geom = new THREE.PlaneGeometry(width, height, segments, 1)
+    const pos = geom.attributes.position
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i)
+      const t = x / (width / 2)
+      const z = -curveDepth * (t * t)
+      pos.setZ(i, z)
+    }
+    pos.needsUpdate = true
+    geom.computeVertexNormals()
+    return geom
+  }, [])
+
+  const placeCinemaScreenAtCamera = useCallback(() => {
+    if (!cinemaScreenRef.current) return
+    camera.getWorldPosition(cinemaCamPos)
+    camera.getWorldDirection(cinemaCamDir)
+    cinemaCamDir.normalize()
+    const targetPos = cinemaCamPos.clone().add(cinemaCamDir.multiplyScalar(CINEMA_SCREEN_DISTANCE))
+    targetPos.y = cinemaCamPos.y + CINEMA_SCREEN_Y_OFFSET
+    cinemaScreenRef.current.position.copy(targetPos)
+    cinemaScreenRef.current.rotation.set(0, yawToFace(camera, targetPos), 0)
+  }, [camera, cinemaCamDir, cinemaCamPos])
+
+  useEffect(() => {
+    if (!cinemaMode) return
+    placeCinemaScreenAtCamera()
+  }, [cinemaMode, placeCinemaScreenAtCamera])
+
+  const cinemaDown = useCallback((e) => {
+    e.stopPropagation()
+    if (!cinemaScreenRef.current) return
+    cinemaDragging.current = true
+    cinemaPointerId.current = e.pointerId
+    e.target?.setPointerCapture?.(e.pointerId)
+    cinemaScreenRef.current.getWorldPosition(cinemaTmpWorld)
+    cinemaOffset.copy(cinemaTmpWorld).sub(e.point)
+    cinemaScreenRef.current.rotation.set(0, yawToFace(camera, cinemaTmpWorld), 0)
+  }, [camera, cinemaOffset, cinemaTmpWorld])
+
+  const cinemaMove = useCallback((e) => {
+    if (!cinemaDragging.current) return
+    if (cinemaPointerId.current != null && e.pointerId !== cinemaPointerId.current) return
+    if (!cinemaScreenRef.current) return
+
+    cinemaTmpWorld.copy(e.point).add(cinemaOffset)
+    if (cinemaScreenRef.current.parent) {
+      cinemaTmpLocal.copy(cinemaTmpWorld)
+      cinemaScreenRef.current.parent.worldToLocal(cinemaTmpLocal)
+      cinemaScreenRef.current.position.copy(cinemaTmpLocal)
+    } else {
+      cinemaScreenRef.current.position.copy(cinemaTmpWorld)
+    }
+
+    cinemaScreenRef.current.getWorldPosition(cinemaTmpWorld)
+    cinemaScreenRef.current.rotation.set(0, yawToFace(camera, cinemaTmpWorld), 0)
+  }, [camera, cinemaOffset, cinemaTmpLocal, cinemaTmpWorld])
+
+  const cinemaUp = useCallback((e) => {
+    if (cinemaPointerId.current != null && e.pointerId !== cinemaPointerId.current) return
+    cinemaDragging.current = false
+    cinemaPointerId.current = null
+    e.target?.releasePointerCapture?.(e.pointerId)
+  }, [])
 
   const placeWindows = useCallback((openKeys) => {
     if (!openKeys.length) {
@@ -649,7 +757,7 @@ export default function VRScene() {
       <group ref={dockRef}>
         <Root
           pixelSize={UI_PIXEL_SIZE}
-          width={860}
+          width={1040}
           height={120}
           backgroundColor="#0b1620"
           backgroundOpacity={0.72}
@@ -670,7 +778,7 @@ export default function VRScene() {
                   setVideoOpen(false)
                 }
               }}
-              width={210}
+              width={180}
               height={70}
             />
             <UiButton
@@ -678,19 +786,26 @@ export default function VRScene() {
               onClick={() => {
                 openGallery()
               }}
-              width={210}
+              width={180}
               height={70}
             />
             <UiButton
               label={ambientEnabled ? 'Ambient: On' : 'Ambient: Off'}
               onClick={toggleAmbient}
-              width={200}
+              width={180}
               height={70}
               variant={ambientEnabled ? 'primary' : 'secondary'}
             />
+            <UiButton
+              label={curvedCinema ? 'Screen: Curved' : 'Screen: Flat'}
+              onClick={() => setCurvedCinema((v) => !v)}
+              width={180}
+              height={70}
+              variant={curvedCinema ? 'primary' : 'secondary'}
+            />
             <Container
               onClick={closeAll}
-              width={160}
+              width={140}
               height={70}
               backgroundColor="#ffffff"
               backgroundOpacity={0.06}
@@ -808,10 +923,17 @@ export default function VRScene() {
             <sphereGeometry args={[25, 64, 32]} />
             <meshBasicMaterial color="black" opacity={0.8} transparent side={THREE.BackSide} />
           </mesh>
-          <mesh position={[0, 1.5, -3]} onClick={() => setCinemaMode(false)}>
-            <planeGeometry args={[6, 3.375]} />
-            <meshBasicMaterial map={videoTexture} />
-          </mesh>
+          <group ref={cinemaScreenRef}>
+            <mesh
+              geometry={curvedCinema ? curvedCinemaGeometry : flatCinemaGeometry}
+              onPointerDown={cinemaDown}
+              onPointerMove={cinemaMove}
+              onPointerUp={cinemaUp}
+              onPointerCancel={cinemaUp}
+            >
+              <meshBasicMaterial map={videoTexture} side={THREE.DoubleSide} />
+            </mesh>
+          </group>
           <group position={[0, -2, -2]}>
             <Root
               pixelSize={UI_PIXEL_SIZE}
