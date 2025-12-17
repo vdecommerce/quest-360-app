@@ -594,7 +594,7 @@ export default function VRScene() {
     for (let i = 0; i < pos.count; i++) {
       const x = pos.getX(i)
       const t = x / (width / 2)
-      const z = -curveDepth * (t * t)
+      const z = curveDepth * (t * t)
       pos.setZ(i, z)
     }
     pos.needsUpdate = true
@@ -919,13 +919,14 @@ export default function VRScene() {
 
       {cinemaMode && (
         <>
-          <mesh>
+          <mesh onClick={() => setCinemaMode(false)}>
             <sphereGeometry args={[25, 64, 32]} />
             <meshBasicMaterial color="black" opacity={0.8} transparent side={THREE.BackSide} />
           </mesh>
           <group ref={cinemaScreenRef}>
             <mesh
               geometry={curvedCinema ? curvedCinemaGeometry : flatCinemaGeometry}
+              onClick={(e) => e.stopPropagation()}
               onPointerDown={cinemaDown}
               onPointerMove={cinemaMove}
               onPointerUp={cinemaUp}
