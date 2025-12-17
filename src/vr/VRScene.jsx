@@ -6,8 +6,9 @@ import { Root, Container, Text, Image, Video } from '@react-three/uikit'
 
 const UI_PIXEL_SIZE = 0.0016
 const DOCK_DISTANCE = 2.0
+const GALLERY_PAGE_SIZE = 9
 
-function useAssetList(pathname, exts) {
+function useAssetList(pathname, exts, refreshToken = 0) {
   const [items, setItems] = useState([])
 
   useEffect(() => {
@@ -28,13 +29,13 @@ function useAssetList(pathname, exts) {
     return () => {
       canceled = true
     }
-  }, [pathname, JSON.stringify(exts)])
+  }, [pathname, JSON.stringify(exts), refreshToken])
 
   return items
 }
 
-function usePanoList() {
-  const items = useAssetList('/assets/panos.json', ['.png', '.jpg'])
+function usePanoList(refreshToken = 0) {
+  const items = useAssetList('/assets/panos.json', ['.png', '.jpg'], refreshToken)
   return items.length ? items : ['/assets/foto.png']
 }
 
@@ -244,7 +245,8 @@ function Window({
 
 export default function VRScene() {
   const { camera, gl } = useThree()
-  const panos = usePanoList()
+  const [panoRefreshToken, setPanoRefreshToken] = useState(0)
+  const panos = usePanoList(panoRefreshToken)
   const [panoIndex, setPanoIndex] = useState(() => Number.parseInt(localStorage.getItem('panoIndex') || '0', 10) || 0)
 
   const [videoOpen, setVideoOpen] = useState(true)
@@ -270,7 +272,7 @@ export default function VRScene() {
   }, [])
   const openGallery = useCallback(() => {
     setGalleryOpen(true)
-    if (panos.length) setGalleryPage(Math.floor(panoIndex / 6))
+    if (panos.length) setGalleryPage(Math.floor(panoIndex / GALLERY_PAGE_SIZE))
   }, [panos.length, panoIndex])
 
   const closeAll = useCallback(() => {
@@ -437,11 +439,15 @@ export default function VRScene() {
     setPanoIndex((i) => (i - 1 + panos.length) % panos.length)
   }, [panos.length])
 
-  const pageSize = 6
+  const pageSize = GALLERY_PAGE_SIZE
   const maxPage = Math.max(1, Math.ceil(panos.length / pageSize))
   const safePage = Math.min(maxPage - 1, Math.max(0, galleryPage))
   const pageStart = safePage * pageSize
   const pageItems = panos.slice(pageStart, pageStart + pageSize)
+
+  const refreshPanos = useCallback(() => {
+    setPanoRefreshToken((v) => v + 1)
+  }, [])
 
 
   const dockRef = useRef()
@@ -551,12 +557,13 @@ export default function VRScene() {
 
     const mapping = {}
     const slots = [0, 1, -1, 2, -2, 3, -3]
+    const spacing = openKeys.length > 1 ? 2.25 : 1.4
     for (let i = 0; i < openKeys.length; i++) {
       const k = openKeys[i]
       const slot = slots[i] ?? (i % 2 === 0 ? Math.ceil(i / 2) : -Math.ceil(i / 2))
       const p = dockWorld.clone()
       p.y = dockWorld.y + 0.95
-      p.add(right.clone().multiplyScalar(slot * 1.4))
+      p.add(right.clone().multiplyScalar(slot * spacing))
       mapping[k] = { position: [p.x, p.y, p.z], yaw }
     }
     setWindowPositions(mapping)
@@ -578,8 +585,8 @@ export default function VRScene() {
     placeWindows(orderedOpen)
   }, [videoOpen, galleryOpen, cinemaMode, openOrder, placeWindows])
   useEffect(() => {
-    if (!cinemaMode && galleryOpen && panos.length) setGalleryPage(Math.floor(panoIndex / 6))
-  }, [cinemaMode, galleryOpen, panos.length, panoIndex])
+    if (!cinemaMode && galleryOpen && panos.length) setGalleryPage(Math.floor(panoIndex / pageSize))
+  }, [cinemaMode, galleryOpen, panos.length, panoIndex, pageSize])
 
   const dockDown = useCallback((e) => {
     e.stopPropagation()
@@ -743,15 +750,43 @@ export default function VRScene() {
         width={1000}
         height={760}
       >
-        <Container width="100%" flexDirection="row" flexWrap="wrap" gap={10} padding={10}>
-          {panos.map((p, i) => {
+        <Container width="100%" flexDirection="row" alignItems="center" justifyContent="space-between" gap={12}>
+          <Container flexDirection="row" gap={10}>
+            <UiButton
+              label="Prev"
+              variant={safePage > 0 ? 'primary' : 'secondary'}
+              onClick={() => {
+                if (safePage > 0) setGalleryPage((p) => Math.max(0, p - 1))
+              }}
+              width={130}
+              height={52}
+            />
+            <UiButton
+              label="Next"
+              variant={safePage < maxPage - 1 ? 'primary' : 'secondary'}
+              onClick={() => {
+                if (safePage < maxPage - 1) setGalleryPage((p) => Math.min(maxPage - 1, p + 1))
+              }}
+              width={130}
+              height={52}
+            />
+          </Container>
+          <Text fontSize={18} color="#EAF6FF">
+            Page {safePage + 1}/{maxPage}
+          </Text>
+          <UiButton label="Refresh" onClick={refreshPanos} width={160} height={52} variant="secondary" />
+        </Container>
+
+        <Container flexGrow={1} width="100%" flexDirection="row" flexWrap="wrap" gap={10} padding={10}>
+          {pageItems.map((p, idx) => {
             const selected = p === src
+            const i = pageStart + idx
             return (
               <Container
                 key={p}
                 onClick={() => setPanoIndex(i)}
-                width="48%"
-                height={200}
+                width="32%"
+                height={190}
                 flexDirection="column"
                 alignItems="center"
                 justifyContent="center"
