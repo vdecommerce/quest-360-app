@@ -5,3 +5,4 @@ dist/
 Thumbs.db
 assets/Thumbs.db
 public/assets/Thumbs.db
+.env
