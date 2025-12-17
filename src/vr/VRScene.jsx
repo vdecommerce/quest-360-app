@@ -6,7 +6,7 @@ import { Root, Container, Text, Image, Video } from '@react-three/uikit'
 
 const UI_PIXEL_SIZE = 0.0016
 const DOCK_DISTANCE = 2.0
-const GALLERY_PAGE_SIZE = 9
+const GALLERY_PAGE_SIZE = 6
 
 function useAssetList(pathname, exts, refreshToken = 0) {
   const [items, setItems] = useState([])
@@ -785,15 +785,15 @@ export default function VRScene() {
               <Container
                 key={p}
                 onClick={() => setPanoIndex(i)}
-                width="32%"
-                height={190}
+                width="48%"
+                height={160}
                 flexDirection="column"
                 alignItems="center"
                 justifyContent="center"
                 backgroundColor={selected ? '#00f2fe' : '#ffffff'}
                 backgroundOpacity={selected ? 0.18 : 0.06}
                 borderRadius={16}
-                padding={10}
+                padding={8}
               >
                 <Image src={p} width="100%" height="100%" borderRadius={10} />
               </Container>
