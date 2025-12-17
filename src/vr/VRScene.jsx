@@ -141,6 +141,7 @@ function Window({
   const offset = useMemo(() => new THREE.Vector3(), [])
   const tmpWorld = useMemo(() => new THREE.Vector3(), [])
   const tmpLocal = useMemo(() => new THREE.Vector3(), [])
+  const faceWorld = useMemo(() => new THREE.Vector3(), [])
 
   const onDown = useCallback((e) => {
     e.stopPropagation()
@@ -178,6 +179,14 @@ function Window({
     dragPointerId.current = null
     e.target?.releasePointerCapture?.(e.pointerId)
   }, [])
+
+  useFrame(() => {
+    if (!visible) return
+    if (dragging.current) return
+    if (!groupRef.current) return
+    groupRef.current.getWorldPosition(faceWorld)
+    groupRef.current.rotation.set(0, yawToFace(camera, faceWorld), 0)
+  })
 
   if (!visible) return null
 
@@ -242,9 +251,9 @@ export default function VRScene() {
   const [videoOpen, setVideoOpen] = useState(true)
   const [galleryOpen, setGalleryOpen] = useState(false)
   const [galleryPage, setGalleryPage] = useState(0)
-  const [openOrder, setOpenOrder] = useState([])
   const [windowPositions, setWindowPositions] = useState({})
   const [cinemaMode, setCinemaMode] = useState(false)
+  const [ambientEnabled, setAmbientEnabled] = useState(() => (localStorage.getItem('ambientEnabled') ?? '1') !== '0')
 
   const src = panos.length ? panos[(panoIndex % panos.length + panos.length) % panos.length] : '/assets/foto.png'
   const videoSrc = '/assets/video.mp4'
@@ -280,6 +289,10 @@ export default function VRScene() {
   }, [videoElement])
   const [playing, setPlaying] = useState(false)
   const [ambientStarted, setAmbientStarted] = useState(false)
+
+  useEffect(() => {
+    localStorage.setItem('ambientEnabled', ambientEnabled ? '1' : '0')
+  }, [ambientEnabled])
 
   useEffect(() => {
     const el = document.createElement('video')
@@ -395,7 +408,7 @@ export default function VRScene() {
         }
         await videoEl.play()
         // Start ambient audio after user interaction to bypass autoplay blocks
-        if (!ambientStarted && ambientAudioRef.current) {
+        if (ambientEnabled && ambientAudioRef.current && (!ambientStarted || ambientAudioRef.current.paused)) {
           try {
             await ambientAudioRef.current.play()
             setAmbientStarted(true)
@@ -407,7 +420,7 @@ export default function VRScene() {
     } catch (e) {
       console.error('Video play error:', e)
     }
-  }, [playing, ambientStarted, videoElement])
+  }, [playing, ambientStarted, ambientEnabled, videoElement])
 
   useEffect(() => {
     if (cinemaMode && videoElement && !playing) {
@@ -486,40 +499,80 @@ export default function VRScene() {
     audio.loop = true
     audio.volume = 1.0
     ambientAudioRef.current = audio
+    if (!ambientEnabled) {
+      audio.pause()
+    }
     return () => {
       audio.pause()
       audio.src = ''
     }
   }, [])
 
-  const placeWindow = useCallback((key) => {
+  useEffect(() => {
+    const audio = ambientAudioRef.current
+    if (!audio) return
+
+    if (!ambientEnabled) {
+      audio.pause()
+      return
+    }
+
+    if (ambientStarted && audio.paused) {
+      audio.play().catch((e) => console.warn('Ambient audio play failed:', e))
+    }
+  }, [ambientEnabled, ambientStarted])
+
+  const toggleAmbient = useCallback(async () => {
+    const audio = ambientAudioRef.current
+    setAmbientEnabled((v) => !v)
+    if (!audio) return
+
+    if (ambientEnabled) {
+      audio.pause()
+      return
+    }
+
+    try {
+      await audio.play()
+      setAmbientStarted(true)
+    } catch (e) {
+      console.warn('Ambient audio play failed:', e)
+    }
+  }, [ambientEnabled])
+
+  const windowSlotPreference = useMemo(() => ({ video: 1, gallery: -1 }), [])
+
+  const placeWindows = useCallback((openKeys) => {
+    if (!openKeys.length) {
+      setWindowPositions({})
+      return
+    }
     const dockWorld = getDockWorld()
     const yaw = yawToFace(camera, dockWorld)
     const right = new THREE.Vector3(Math.sin(yaw + Math.PI / 2), 0, Math.cos(yaw + Math.PI / 2))
 
-    setOpenOrder((prev) => {
-      const next = prev.includes(key) ? prev : [...prev, key]
-      const slots = [0, -1, 1]
-      const mapping = {}
-      for (let i = 0; i < next.length; i++) {
-        const k = next[i]
-        const slot = slots[i] ?? (i - 1)
-        const p = dockWorld.clone()
-        p.y = dockWorld.y + 0.95
-        p.add(right.clone().multiplyScalar(slot * 1.4))
-        mapping[k] = { position: [p.x, p.y, p.z], yaw }
-      }
-      setWindowPositions(mapping)
-      return next
-    })
-  }, [getDockWorld])
+    const mapping = {}
+    for (let i = 0; i < openKeys.length; i++) {
+      const k = openKeys[i]
+      const slot = windowSlotPreference[k] ?? (i % 2 === 0 ? 1 : -1)
+      const p = dockWorld.clone()
+      p.y = dockWorld.y + 0.95
+      p.add(right.clone().multiplyScalar(slot * 1.4))
+      mapping[k] = { position: [p.x, p.y, p.z], yaw }
+    }
+    setWindowPositions(mapping)
+  }, [camera, getDockWorld, windowSlotPreference])
 
   useEffect(() => {
-    if (videoOpen) placeWindow('video')
-  }, [videoOpen])
+    if (cinemaMode) return
+    const openKeys = []
+    if (videoOpen) openKeys.push('video')
+    if (galleryOpen) openKeys.push('gallery')
+    placeWindows(openKeys)
+  }, [videoOpen, galleryOpen, cinemaMode, placeWindows])
   useEffect(() => {
-    if (galleryOpen) placeWindow('gallery')
-  }, [galleryOpen])
+    if (!cinemaMode && galleryOpen && panos.length) setGalleryPage(Math.floor(panoIndex / 6))
+  }, [cinemaMode, galleryOpen, panos.length, panoIndex])
 
   const dockDown = useCallback((e) => {
     e.stopPropagation()
@@ -599,26 +652,31 @@ export default function VRScene() {
               onClick={() => {
                 if (!videoOpen) {
                   setVideoOpen(true)
-                  placeWindow('video')
                 } else {
                   setVideoOpen(false)
                 }
               }}
-              width={240}
+              width={210}
               height={70}
             />
             <UiButton
               label="360 Gallery"
               onClick={() => {
                 openGallery()
-                placeWindow('gallery')
               }}
-              width={240}
+              width={210}
               height={70}
+            />
+            <UiButton
+              label={ambientEnabled ? 'Ambient: On' : 'Ambient: Off'}
+              onClick={toggleAmbient}
+              width={200}
+              height={70}
+              variant={ambientEnabled ? 'primary' : 'secondary'}
             />
             <Container
               onClick={closeAll}
-              width={180}
+              width={160}
               height={70}
               backgroundColor="#ffffff"
               backgroundOpacity={0.06}
