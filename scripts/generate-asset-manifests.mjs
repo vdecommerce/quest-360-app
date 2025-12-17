@@ -19,7 +19,7 @@ async function writeJson(filename, data) {
 }
 
 async function main() {
-  const panos = await listFiles('.png')
+  const panos = [...(await listFiles('.png')), ...(await listFiles('.jpg'))].sort((a, b) => a.localeCompare(b))
   const videos = await listFiles('.mp4')
 
   await writeJson('panos.json', panos)

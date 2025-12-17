@@ -7,7 +7,7 @@ import { Root, Container, Text, Image, Video } from '@react-three/uikit'
 const UI_PIXEL_SIZE = 0.0016
 const DOCK_DISTANCE = 2.0
 
-function useAssetList(pathname, ext) {
+function useAssetList(pathname, exts) {
   const [items, setItems] = useState([])
 
   useEffect(() => {
@@ -18,7 +18,7 @@ function useAssetList(pathname, ext) {
         const list = await res.json()
         if (!Array.isArray(list)) return
         const normalized = list
-          .filter((v) => typeof v === 'string' && v.toLowerCase().endsWith(ext))
+          .filter((v) => typeof v === 'string' && exts.some(e => v.toLowerCase().endsWith(e)))
           .map((v) => (v.startsWith('/assets/') ? v : v.startsWith('assets/') ? `/${v}` : `/assets/${v}`))
         if (!canceled) setItems(normalized)
       } catch (e) {
@@ -28,13 +28,13 @@ function useAssetList(pathname, ext) {
     return () => {
       canceled = true
     }
-  }, [pathname, ext])
+  }, [pathname, JSON.stringify(exts)])
 
   return items
 }
 
 function usePanoList() {
-  const items = useAssetList('/assets/panos.json', '.png')
+  const items = useAssetList('/assets/panos.json', ['.png', '.jpg'])
   return items.length ? items : ['/assets/foto.png']
 }
 
