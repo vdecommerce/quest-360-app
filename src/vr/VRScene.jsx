@@ -11,16 +11,33 @@ const CINEMA_SCREEN_DISTANCE = 4.2
 const CINEMA_SCREEN_Y_OFFSET = 0.1
 const GALLERY_THUMB_MAX_SIZE = 512
 const GALLERY_THUMB_CACHE_LIMIT = 24
+const VIDEO_THUMB_MAX_SIZE = 512
+const VIDEO_THUMB_CACHE_LIMIT = 18
+const WINDOW_SIDE_SPACING = 1.9
+const WINDOW_SINGLE_SPACING = 1.25
+
+function resolveUrl(url) {
+  try {
+    return new URL(String(url || ''), window.location.href).toString()
+  } catch {
+    return String(url || '')
+  }
+}
 
 async function loadScaledThumbnailTexture(url, maxSize) {
-  const res = await fetch(url, { cache: 'force-cache' })
+  const res = await fetch(resolveUrl(url), { cache: 'force-cache' })
   const blob = await res.blob()
 
   if (typeof createImageBitmap !== 'function') {
     throw new Error('createImageBitmap not available')
   }
 
-  const bitmap = await createImageBitmap(blob, { resizeWidth: maxSize, resizeQuality: 'high' })
+  let bitmap
+  try {
+    bitmap = await createImageBitmap(blob, { resizeWidth: maxSize, resizeQuality: 'high' })
+  } catch {
+    bitmap = await createImageBitmap(blob)
+  }
   const scale = Math.min(1, maxSize / bitmap.width, maxSize / bitmap.height)
   const w = Math.max(1, Math.round(bitmap.width * scale))
   const h = Math.max(1, Math.round(bitmap.height * scale))
@@ -36,6 +53,111 @@ async function loadScaledThumbnailTexture(url, maxSize) {
   } catch (e) {
     // ignore
   }
+
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.colorSpace = THREE.SRGBColorSpace
+  texture.minFilter = THREE.LinearMipmapLinearFilter
+  texture.magFilter = THREE.LinearFilter
+  texture.generateMipmaps = true
+  texture.needsUpdate = true
+  return texture
+}
+
+async function loadScaledVideoThumbnailTexture(url, maxSize) {
+  const video = document.createElement('video')
+  video.crossOrigin = 'anonymous'
+  video.muted = true
+  video.playsInline = true
+  video.preload = 'auto'
+  video.src = resolveUrl(url)
+
+  const wait = (event, timeoutMs = 8000) =>
+    new Promise((resolve, reject) => {
+      const onOk = () => {
+        cleanup()
+        resolve()
+      }
+      const onErr = () => {
+        cleanup()
+        reject(new Error(`Video thumbnail load failed: ${url}`))
+      }
+      const cleanup = () => {
+        video.removeEventListener(event, onOk)
+        video.removeEventListener('error', onErr)
+        clearTimeout(timeout)
+      }
+      video.addEventListener(event, onOk)
+      video.addEventListener('error', onErr)
+      const timeout = setTimeout(() => {
+        cleanup()
+        reject(new Error(`Timeout waiting for ${event}: ${url}`))
+      }, timeoutMs)
+    })
+
+  if (video.readyState < 1) {
+    const p = wait('loadedmetadata')
+    video.load?.()
+    await p
+  }
+
+  try {
+    const trySeekTo = Math.min(0.1, Number.isFinite(video.duration) ? Math.max(0, video.duration * 0.03) : 0.05)
+    video.currentTime = trySeekTo
+    await new Promise((resolve) => {
+      const done = () => {
+        cleanup()
+        resolve()
+      }
+      const cleanup = () => {
+        video.removeEventListener('seeked', done)
+        video.removeEventListener('timeupdate', done)
+        video.removeEventListener('loadeddata', done)
+      }
+      video.addEventListener('seeked', done)
+      video.addEventListener('timeupdate', done)
+      video.addEventListener('loadeddata', done)
+      if (typeof video.requestVideoFrameCallback === 'function') {
+        try {
+          video.requestVideoFrameCallback(() => done())
+        } catch (e) {
+          // ignore
+        }
+      }
+      setTimeout(done, 1000)
+    })
+  } catch (e) {
+    // ignore
+  }
+
+  if (video.readyState < 2) {
+    try {
+      const p = wait('loadeddata')
+      video.load?.()
+      await p
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  const w0 = Math.max(1, video.videoWidth || 1)
+  const h0 = Math.max(1, video.videoHeight || 1)
+  const scale = Math.min(1, maxSize / w0, maxSize / h0)
+  const w = Math.max(1, Math.round(w0 * scale))
+  const h = Math.max(1, Math.round(h0 * scale))
+
+  const canvas = document.createElement('canvas')
+  canvas.width = w
+  canvas.height = h
+  const ctx = canvas.getContext('2d')
+  if (ctx) ctx.drawImage(video, 0, 0, w, h)
+
+  try {
+    video.pause()
+  } catch (e) {
+    // ignore
+  }
+  video.removeAttribute('src')
+  video.load?.()
 
   const texture = new THREE.CanvasTexture(canvas)
   texture.colorSpace = THREE.SRGBColorSpace
@@ -130,6 +252,122 @@ function GalleryThumb({ url, selected, onSelect, cacheRef }) {
   )
 }
 
+function VideoGalleryThumb({ url, selected, onSelect, cacheRef }) {
+  const [texture, setTexture] = useState(() => cacheRef.current.get(url)?.texture ?? null)
+
+  useEffect(() => {
+    let canceled = false
+
+    const touch = (entry) => {
+      cacheRef.current.delete(url)
+      cacheRef.current.set(url, entry)
+    }
+
+    const enforceLimit = () => {
+      while (cacheRef.current.size > VIDEO_THUMB_CACHE_LIMIT) {
+        const oldestKey = cacheRef.current.keys().next().value
+        const oldest = cacheRef.current.get(oldestKey)
+        cacheRef.current.delete(oldestKey)
+        if (oldest?.texture) disposeThumbnailTexture(oldest.texture)
+      }
+    }
+
+    ;(async () => {
+      const existing = cacheRef.current.get(url)
+      if (existing?.texture) {
+        touch(existing)
+        if (!canceled) setTexture(existing.texture)
+        return
+      }
+      if (existing?.promise) {
+        try {
+          const tex = await existing.promise
+          if (canceled) return
+          setTexture(tex)
+        } catch (e) {
+          // ignore
+        }
+        return
+      }
+
+      // Try static image thumbnails first
+      const base = url.substring(0, url.lastIndexOf('.'))
+      for (const ext of ['.png', '.jpg', '.jpeg', '.webp']) {
+        try {
+          const thumbUrl = base + ext
+          const res = await fetch(resolveUrl(thumbUrl), { method: 'HEAD' })
+          if (res.ok) {
+            const tex = await loadScaledThumbnailTexture(thumbUrl, VIDEO_THUMB_MAX_SIZE)
+            const entry = { texture: tex }
+            touch(entry)
+            enforceLimit()
+            if (!canceled) setTexture(tex)
+            return
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+
+      const promise = loadScaledVideoThumbnailTexture(url, VIDEO_THUMB_MAX_SIZE)
+      cacheRef.current.set(url, { promise })
+      try {
+        const tex = await promise
+        const entry = { texture: tex }
+        touch(entry)
+        enforceLimit()
+        if (!canceled) setTexture(tex)
+      } catch (e) {
+        cacheRef.current.delete(url)
+        if (!canceled) setTexture(null)
+      }
+    })()
+
+    return () => {
+      canceled = true
+    }
+  }, [cacheRef, url])
+
+  return (
+    <Container
+      onClick={onSelect}
+      width="48%"
+      height={160}
+      flexDirection="column"
+      alignItems="center"
+      justifyContent="center"
+      backgroundColor={selected ? '#00f2fe' : '#ffffff'}
+      backgroundOpacity={selected ? 0.18 : 0.06}
+      borderRadius={16}
+      padding={8}
+    >
+      {texture ? (
+        <Container width="100%" height="100%">
+          <Image src={texture} width="100%" height="100%" borderRadius={10} />
+          <Container
+            position="absolute"
+            bottom={8}
+            right={8}
+            width={34}
+            height={34}
+            borderRadius={999}
+            backgroundColor="#000000"
+            backgroundOpacity={0.55}
+            alignItems="center"
+            justifyContent="center"
+          >
+            <Text fontSize={18} color="#FFFFFF">▶</Text>
+          </Container>
+        </Container>
+      ) : (
+        <Text fontSize={16} color="#EAF6FF">
+          {truncateMiddle(fileBaseName(url), 26)}
+        </Text>
+      )}
+    </Container>
+  )
+}
+
 function useAssetList(pathname, exts, refreshToken = 0) {
   const [items, setItems] = useState([])
 
@@ -159,6 +397,11 @@ function useAssetList(pathname, exts, refreshToken = 0) {
 function usePanoList(refreshToken = 0) {
   const items = useAssetList('/assets/panos.json', ['.png', '.jpg'], refreshToken)
   return items.length ? items : ['/assets/foto.png']
+}
+
+function useVideoList(refreshToken = 0) {
+  const items = useAssetList('/assets/videos.json', ['.mp4'], refreshToken)
+  return items.length ? items : ['/assets/borg ewsum video.mp4']
 }
 
 
@@ -371,10 +614,15 @@ export default function VRScene() {
   const panos = usePanoList(panoRefreshToken)
   const [panoIndex, setPanoIndex] = useState(() => Number.parseInt(localStorage.getItem('panoIndex') || '0', 10) || 0)
   const thumbCacheRef = useRef(new Map())
+  const [videoRefreshToken, setVideoRefreshToken] = useState(0)
+  const videos = useVideoList(videoRefreshToken)
+  const videoThumbCacheRef = useRef(new Map())
 
   const [videoOpen, setVideoOpen] = useState(true)
   const [galleryOpen, setGalleryOpen] = useState(false)
   const [galleryPage, setGalleryPage] = useState(0)
+  const [videoGalleryOpen, setVideoGalleryOpen] = useState(false)
+  const [videoGalleryPage, setVideoGalleryPage] = useState(0)
   const [openOrder, setOpenOrder] = useState([])
   const [windowPositions, setWindowPositions] = useState({})
   const [cinemaMode, setCinemaMode] = useState(false)
@@ -382,7 +630,30 @@ export default function VRScene() {
   const [curvedCinema, setCurvedCinema] = useState(() => (localStorage.getItem('curvedCinema') ?? '0') === '1')
 
   const src = panos.length ? panos[(panoIndex % panos.length + panos.length) % panos.length] : '/assets/foto.png'
-  const videoSrc = '/assets/video.mp4'
+  const [videoSrc, setVideoSrc] = useState(() => localStorage.getItem('videoSrc') || '/assets/borg ewsum video.mp4')
+  const [videoVolume, setVideoVolume] = useState(() => {
+    const raw = localStorage.getItem('videoVolume')
+    const parsed = raw != null ? Number(raw) : 1
+    return Number.isFinite(parsed) ? Math.min(1, Math.max(0, parsed)) : 1
+  })
+  const videoRef = useRef(null)
+  const ambientAudioRef = useRef(null)
+  const [videoElement, setVideoElement] = useState(null)
+
+  useEffect(() => {
+    localStorage.setItem('videoSrc', String(videoSrc))
+  }, [videoSrc])
+
+  useEffect(() => {
+    localStorage.setItem('videoVolume', String(videoVolume))
+    const videoEl = videoElement ?? videoRef.current?.element
+    if (videoEl) videoEl.volume = videoVolume
+  }, [videoVolume, videoElement])
+
+  useEffect(() => {
+    if (!videos.length) return
+    if (!videos.includes(videoSrc)) setVideoSrc(videos[0])
+  }, [videos, videoSrc])
 
   useEffect(() => {
     if (!panos.length) return
@@ -391,22 +662,21 @@ export default function VRScene() {
   }, [panoIndex, panos.length])
 
 
-  const openVideo = useCallback(() => {
-    setVideoOpen(true)
-  }, [])
   const openGallery = useCallback(() => {
     setGalleryOpen(true)
     if (panos.length) setGalleryPage(Math.floor(panoIndex / GALLERY_PAGE_SIZE))
   }, [panos.length, panoIndex])
+  const openVideoGallery = useCallback(() => {
+    setVideoGalleryOpen(true)
+    const idx = videos.indexOf(videoSrc)
+    if (idx >= 0) setVideoGalleryPage(Math.floor(idx / GALLERY_PAGE_SIZE))
+  }, [videoSrc, videos])
 
   const closeAll = useCallback(() => {
     setVideoOpen(false)
     setGalleryOpen(false)
+    setVideoGalleryOpen(false)
   }, [])
-
-  const videoRef = useRef(null)
-  const ambientAudioRef = useRef(null)
-  const [videoElement, setVideoElement] = useState(null)
   const videoTexture = useMemo(() => {
     if (!videoElement) return null
     const tex = new THREE.VideoTexture(videoElement)
@@ -431,6 +701,7 @@ export default function VRScene() {
     el.preload = 'auto'
     el.loop = true
     el.playsInline = true
+    el.volume = videoVolume
     setVideoElement(el)
 
     return () => {
@@ -573,8 +844,22 @@ export default function VRScene() {
   const pageStart = safePage * pageSize
   const pageItems = panos.slice(pageStart, pageStart + pageSize)
 
+  const videoMaxPage = Math.max(1, Math.ceil(videos.length / pageSize))
+  const videoSafePage = Math.min(videoMaxPage - 1, Math.max(0, videoGalleryPage))
+  const videoPageStart = videoSafePage * pageSize
+  const videoPageItems = videos.slice(videoPageStart, videoPageStart + pageSize)
+
   const refreshPanos = useCallback(() => {
     setPanoRefreshToken((v) => v + 1)
+  }, [])
+
+  const refreshVideos = useCallback(() => {
+    setVideoRefreshToken((v) => v + 1)
+  }, [])
+
+  const setVolumeFromStep = useCallback((step) => {
+    const n = Math.min(10, Math.max(0, Number(step) || 0))
+    setVideoVolume(n / 10)
   }, [])
 
 
@@ -760,19 +1045,62 @@ export default function VRScene() {
       return
     }
     const dockWorld = getDockWorld()
-    const yaw = yawToFace(camera, dockWorld)
-    const right = new THREE.Vector3(Math.sin(yaw + Math.PI / 2), 0, Math.cos(yaw + Math.PI / 2))
+    const baseYaw = yawToFace(camera, dockWorld)
+    const right = new THREE.Vector3(Math.sin(baseYaw + Math.PI / 2), 0, Math.cos(baseYaw + Math.PI / 2))
+    const toCamera = new THREE.Vector3(Math.sin(baseYaw), 0, Math.cos(baseYaw))
 
-    const mapping = {}
+    const windowWidthPx = {
+      video: 1000,
+      gallery: 1000,
+      videoGallery: 1000
+    }
+    const halfWidthWorld = (k) => ((windowWidthPx[k] ?? 1000) * UI_PIXEL_SIZE) / 2
+
     const slots = [0, 1, -1, 2, -2, 3, -3]
-    const spacing = openKeys.length > 1 ? 2.25 : 1.4
-    for (let i = 0; i < openKeys.length; i++) {
-      const k = openKeys[i]
+    const spacing = openKeys.length > 1 ? WINDOW_SIDE_SPACING : WINDOW_SINGLE_SPACING
+
+    const placed = openKeys.map((k, i) => {
       const slot = slots[i] ?? (i % 2 === 0 ? Math.ceil(i / 2) : -Math.ceil(i / 2))
       const p = dockWorld.clone()
       p.y = dockWorld.y + 0.95
       p.add(right.clone().multiplyScalar(slot * spacing))
-      mapping[k] = { position: [p.x, p.y, p.z], yaw }
+      return { k, slot, p }
+    })
+
+    const center = placed.find((v) => v.slot === 0) ?? placed[0]
+    const centerYaw = yawToFace(camera, center.p)
+    const centerRight = new THREE.Vector3(Math.sin(centerYaw + Math.PI / 2), 0, Math.cos(centerYaw + Math.PI / 2))
+    const centerHalf = halfWidthWorld(center.k)
+    const centerEdgeRight = center.p.clone().add(centerRight.clone().multiplyScalar(centerHalf))
+    const centerEdgeLeft = center.p.clone().add(centerRight.clone().multiplyScalar(-centerHalf))
+
+    const alignPass = () => {
+      for (const w of placed) {
+        if (w === center) continue
+        if (!w.slot) continue
+
+        const yw = yawToFace(camera, w.p)
+        const rw = new THREE.Vector3(Math.sin(yw + Math.PI / 2), 0, Math.cos(yw + Math.PI / 2))
+        const hw = halfWidthWorld(w.k)
+
+        if (w.slot > 0) {
+          const innerEdge = w.p.clone().add(rw.clone().multiplyScalar(-hw))
+          const delta = toCamera.dot(centerEdgeRight) - toCamera.dot(innerEdge)
+          w.p.add(toCamera.clone().multiplyScalar(delta))
+        } else {
+          const innerEdge = w.p.clone().add(rw.clone().multiplyScalar(hw))
+          const delta = toCamera.dot(centerEdgeLeft) - toCamera.dot(innerEdge)
+          w.p.add(toCamera.clone().multiplyScalar(delta))
+        }
+      }
+    }
+
+    alignPass()
+    alignPass()
+
+    const mapping = {}
+    for (const w of placed) {
+      mapping[w.k] = { position: [w.p.x, w.p.y, w.p.z] }
     }
     setWindowPositions(mapping)
   }, [camera, getDockWorld])
@@ -780,21 +1108,28 @@ export default function VRScene() {
   useEffect(() => {
     if (cinemaMode) return
     setOpenOrder((prev) => {
-      let next = prev.filter((k) => (k === 'video' ? videoOpen : k === 'gallery' ? galleryOpen : false))
+      let next = prev.filter((k) => (k === 'video' ? videoOpen : k === 'gallery' ? galleryOpen : k === 'videoGallery' ? videoGalleryOpen : false))
       if (videoOpen && !next.includes('video')) next = [...next, 'video']
       if (galleryOpen && !next.includes('gallery')) next = [...next, 'gallery']
+      if (videoGalleryOpen && !next.includes('videoGallery')) next = [...next, 'videoGallery']
       return next
     })
-  }, [videoOpen, galleryOpen, cinemaMode])
+  }, [videoOpen, galleryOpen, videoGalleryOpen, cinemaMode])
 
   useEffect(() => {
     if (cinemaMode) return
-    const orderedOpen = openOrder.filter((k) => (k === 'video' ? videoOpen : k === 'gallery' ? galleryOpen : false))
+    const orderedOpen = openOrder.filter((k) => (k === 'video' ? videoOpen : k === 'gallery' ? galleryOpen : k === 'videoGallery' ? videoGalleryOpen : false))
     placeWindows(orderedOpen)
-  }, [videoOpen, galleryOpen, cinemaMode, openOrder, placeWindows])
+  }, [videoOpen, galleryOpen, videoGalleryOpen, cinemaMode, openOrder, placeWindows])
   useEffect(() => {
     if (!cinemaMode && galleryOpen && panos.length) setGalleryPage(Math.floor(panoIndex / pageSize))
   }, [cinemaMode, galleryOpen, panos.length, panoIndex, pageSize])
+  useEffect(() => {
+    if (!cinemaMode && videoGalleryOpen && videos.length) {
+      const idx = videos.indexOf(videoSrc)
+      if (idx >= 0) setVideoGalleryPage(Math.floor(idx / pageSize))
+    }
+  }, [cinemaMode, videoGalleryOpen, videos.length, videoSrc, videos, pageSize])
 
   const dockDown = useCallback((e) => {
     e.stopPropagation()
@@ -870,13 +1205,9 @@ export default function VRScene() {
         >
           <Container width="100%" height="100%" flexDirection="row" alignItems="center" justifyContent="space-between" gap={12} paddingX={16}>
             <UiButton
-              label={videoOpen ? 'Close Video' : 'Video Player'}
+              label="Video Gallery"
               onClick={() => {
-                if (!videoOpen) {
-                  setVideoOpen(true)
-                } else {
-                  setVideoOpen(false)
-                }
+                openVideoGallery()
               }}
               width={180}
               height={70}
@@ -895,13 +1226,6 @@ export default function VRScene() {
               width={180}
               height={70}
               variant={ambientEnabled ? 'primary' : 'secondary'}
-            />
-            <UiButton
-              label={curvedCinema ? 'Screen: Curved' : 'Screen: Flat'}
-              onClick={() => setCurvedCinema((v) => !v)}
-              width={180}
-              height={70}
-              variant={curvedCinema ? 'primary' : 'secondary'}
             />
             <Container
               onClick={closeAll}
@@ -925,6 +1249,7 @@ export default function VRScene() {
         initialPosition={windowPositions.video?.position ?? [-1.0, 1.55, -2]}
         title="Video Player"
         titlePlacement="bottom"
+        onMinimize={() => setVideoOpen(false)}
         width={1000}
         height={750}
       >
@@ -943,8 +1268,34 @@ export default function VRScene() {
             onError={(e) => console.error('Video loading error:', e)}
           />
         </Container>
-        <Container padding={10} justifyContent="center" alignItems="center" flexDirection="row" gap={20}>
+        <Container padding={10} justifyContent="center" alignItems="center" flexDirection="row" gap={16}>
           <UiButton label={playing ? 'Pause' : 'Play'} onClick={togglePlay} width={160} height={52} />
+          <Container flexDirection="row" alignItems="center" gap={8}>
+            <Text fontSize={18} color="#EAF6FF">Vol</Text>
+            <Container flexDirection="row" gap={6}>
+              {Array.from({ length: 11 }).map((_, i) => {
+                const active = videoVolume >= i / 10 - 1e-6
+                return (
+                  <Container
+                    key={i}
+                    onClick={() => setVolumeFromStep(i)}
+                    width={18}
+                    height={20}
+                    backgroundColor={active ? '#00f2fe' : '#ffffff'}
+                    backgroundOpacity={active ? 0.35 : 0.06}
+                    borderRadius={6}
+                  />
+                )
+              })}
+            </Container>
+          </Container>
+          <UiButton
+            label={curvedCinema ? 'Screen: Curved' : 'Screen: Flat'}
+            onClick={() => setCurvedCinema((v) => !v)}
+            width={180}
+            height={52}
+            variant={curvedCinema ? 'primary' : 'secondary'}
+          />
           <UiButton label="Cinema Mode" onClick={() => {
             if (dockRef.current) {
               savedDockPosition.current.copy(dockRef.current.position)
@@ -953,6 +1304,62 @@ export default function VRScene() {
             setCinemaMode(true)
           }} width={160} height={52} />
           <UiButton label="Close" onClick={() => setVideoOpen(false)} width={160} height={52} />
+        </Container>
+      </Window>
+
+      <Window
+        visible={videoGalleryOpen && !cinemaMode}
+        initialPosition={windowPositions.videoGallery?.position ?? [0.0, 1.55, -2]}
+        title="Video Gallery"
+        titlePlacement="bottom"
+        onMinimize={() => setVideoGalleryOpen(false)}
+        width={1000}
+        height={760}
+      >
+        <Container width="100%" flexDirection="row" alignItems="center" justifyContent="space-between" gap={12}>
+          <Container flexDirection="row" gap={10}>
+            <UiButton
+              label="Prev"
+              variant={videoSafePage > 0 ? 'primary' : 'secondary'}
+              onClick={() => {
+                if (videoSafePage > 0) setVideoGalleryPage((p) => Math.max(0, p - 1))
+              }}
+              width={130}
+              height={52}
+            />
+            <UiButton
+              label="Next"
+              variant={videoSafePage < videoMaxPage - 1 ? 'primary' : 'secondary'}
+              onClick={() => {
+                if (videoSafePage < videoMaxPage - 1) setVideoGalleryPage((p) => Math.min(videoMaxPage - 1, p + 1))
+              }}
+              width={130}
+              height={52}
+            />
+          </Container>
+          <Text fontSize={18} color="#EAF6FF">
+            Page {videoSafePage + 1}/{videoMaxPage}
+          </Text>
+          <UiButton label="Refresh" onClick={refreshVideos} width={160} height={52} variant="secondary" />
+        </Container>
+
+        <Container flexGrow={1} width="100%" flexDirection="row" flexWrap="wrap" gap={10} padding={10}>
+          {videoPageItems.map((p) => {
+            const selected = p === videoSrc
+            return (
+              <VideoGalleryThumb
+                key={p}
+                url={p}
+                selected={selected}
+                onSelect={() => {
+                  setVideoSrc(p)
+                  setVideoOpen(true)
+                  setCinemaMode(false)
+                }}
+                cacheRef={videoThumbCacheRef}
+              />
+            )
+          })}
         </Container>
       </Window>
 
@@ -1030,13 +1437,14 @@ export default function VRScene() {
           <group position={[0, -2, -2]}>
             <Root
               pixelSize={UI_PIXEL_SIZE}
-              width={200}
+              width={420}
               height={60}
               backgroundColor="#000000"
               backgroundOpacity={0.5}
               borderRadius={10}
             >
-              <Container width="100%" height="100%" alignItems="center" justifyContent="center">
+              <Container width="100%" height="100%" alignItems="center" justifyContent="center" flexDirection="row" gap={12}>
+                <UiButton label="Recenter" onClick={placeCinemaScreenAtCamera} width={180} height={50} />
                 <UiButton label="Back" onClick={() => setCinemaMode(false)} width={180} height={50} />
               </Container>
             </Root>
